@@ -168,30 +168,22 @@ class DataExtractor:
             remarks = match.group(1).strip()
             # Clean up the text
             remarks = re.sub(r'\s+', ' ', remarks)
-            # Remove the short remarks if it's just deduction info
-            if len(remarks) > 50:  # Only return if it's substantial
+            if len(remarks) > 50: 
                 return remarks
         
         return None
     
-    def extract_all_data(self, pdf_path):
-        """Extract all required fields from PDF"""
-        print(f"Processing PDF: {pdf_path}")
+    def extract_all_data(self, pdf_path):        
         
-        # Extract text from PDF
         text = self.extract_text_from_pdf(pdf_path)
         
         if not text.strip():
             print("No text could be extracted from the PDF")
             return None
-        
-        # Extract each field
         extracted_data = {}
-        
         for field_name in self.patterns.keys():
             extracted_data[field_name] = self.extract_field(text, field_name)
         
-        # Add Letter Type (assuming it's always Authorization Letter based on the sample)
         extracted_data['Letter Type'] = 'Authorization Letter'
         
         return extracted_data
