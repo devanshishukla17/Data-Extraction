@@ -7,7 +7,7 @@ from PIL import Image
 import pytesseract
 import io
 
-class PDFDataExtractor:
+class DataExtractor:
     def __init__(self):
         self.patterns = {
             'AL Number': [
@@ -238,7 +238,7 @@ def main():
         print(f"No command line argument provided, using default: {pdf_path}")
     
     # Initialize extractor
-    extractor = PDFDataExtractor()
+    extractor = DataExtractor()
     
     # Process PDF
     result = extractor.process_pdf(pdf_path)
