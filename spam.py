@@ -7,6 +7,8 @@ from PIL import Image
 import pytesseract
 import io
 
+pytesseract.pytesseract.tesseract_cmd = r"C:\Users\DEVANSHI\tesseract.exe"
+
 class DataExtractor:
     def __init__(self):
         self.patterns = {
