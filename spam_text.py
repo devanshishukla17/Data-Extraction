@@ -13,11 +13,9 @@ class DataExtractor:
     def __init__(self):
         self.patterns = {
             'AL Number': [
-                r'AL\s+Number\s*:?\s*([A-Z0-9\-/]+)',
-                r'Authorization\s+Letter\s+Number\s*:?\s*([A-Z0-9\-/]+)',
-                r'AL\s+No\s*:?\s*([A-Z0-9\-/]+)',
-                r'AL\s+ID\s*:?\s*([A-Z0-9\-/]+)',
-                r'AL\s*:?\s*([A-Z0-9\-/]+)'  
+                r'AL\s*Number\s*:?\s*([^\s]+)',  
+                r'AL\s*:?\s*([^\s]+)',
+                r'Authorization\s+Letter\s+Number\s*:?\s*([^\s]+)'
             ],
             'Approved Amount': [
                 r'Final\s+(?:Sanctioned|Approved)\s+Amount\s*:?\s*(\d+)',
@@ -41,14 +39,6 @@ class DataExtractor:
                 r'Policy\s+No\s*:?\s*([A-Z0-9\/\-]+)',
                 r'Policy\s+Number\s*:?\s*([A-Z0-9\/\-]+)'
             ],
-            # 'Policy Period': [
-            #     r'Policy\s+Period\s*:?\s*([^:\n]+?)(?:\n|Date\s+of)',
-            #     r'Policy\s+Term\s*:?\s*([^:\n]+?)(?:\n|Date\s+of)'
-            # ],
-            # 'Policy Period': [
-            #         r'Policy\s+Period\s*:?\s*((?:.(?!\n\s*Date\s+of))+)',
-            #         r'Policy\s+Term\s*:?\s*((?:.(?!\n\s*Date\s+of))+)'  
-            # ],
             'Policy Period': [
                         r'Policy\s+Period\s*:?\s*((?:(?!\n\s*Date\s+of)[\s\S])+)',
                         r'Policy\s+Term\s*:?\s*((?:(?!\n\s*Date\s+of)[\s\S])+)'
@@ -81,7 +71,6 @@ class DataExtractor:
                 page_text = page.get_text()
                 
                 if not page_text.strip():
-                    #print(f"No text found on page {page_num + 1}, using OCR...")
                     pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                     img_data = pix.tobytes("png")
                     img = Image.open(io.BytesIO(img_data))
@@ -97,7 +86,7 @@ class DataExtractor:
             return ""
     
     def clean_extracted_value(self, value, field_name):
-        """Clean and format extracted values"""
+        #print(f"Raw AL Number value before cleaning: '{value}'")
         if not value:
             return None
         
@@ -127,16 +116,11 @@ class DataExtractor:
             return value.strip()
         
         elif field_name == 'AL Number':
-            value = re.sub(r'[^A-Z0-9\-/]', '', value)
-            return value if len(value) > 3 else None
+            if value:
+                value = re.sub(r'[\u00AD\u2010\u2011\u2012\u2013\u2014\u2015]', '-', value.strip())
+                return value
+        return None
         
-        elif field_name == 'Policy Period':
-            value = re.sub(r'-\s*\n\s*', '-', value)
-            value = re.sub(r'\s+', ' ', value)
-            return value.strip()
-        
-        return value
-    
     def extract_field(self, text, field_name):
         patterns = self.patterns.get(field_name, [])
 
@@ -147,14 +131,16 @@ class DataExtractor:
             policy_match = re.search(r'Policy\s+Period\s*:?.*?\n', text, re.IGNORECASE)
             if policy_match:
                 text = text[policy_match.end():]
-
-        for pattern in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    
+        for i, pattern in enumerate(patterns):
+            matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
             if matches:
+            #     print(f"Pattern {i+1} matched: {pattern}")
+            #     print(f"Raw match: {matches[0]}")
                 value = self.clean_extracted_value(matches[0], field_name)
                 if value:
                     return value
-
+    
         return None
     
     def extract_remarks(self, text):
