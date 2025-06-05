@@ -150,21 +150,32 @@ class DataExtractor:
         return None
     
     def extract_remarks(self, text):
+        # First try to find the specific remarks section that precedes "For any cashless queries"
+        target_pattern = r'Remarks?\s*:?\s*(.*?)(?=\s*For any cashless queries)'
+        match = re.search(target_pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+        if match:
+            remarks = match.group(1).strip()
+            remarks = re.sub(r'\s+', ' ', remarks)
+            if remarks:  # Only return if we found something
+                return remarks
+    
+        # Fall back to other patterns if the specific one didn't match
+        interim_pattern = r'Remarks\s*:?\s*(.*?)(?:\n\s*For any cashless queries|Note:|$)'
+        match = re.search(interim_pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+        if match:
+            remarks = match.group(1).strip()
+            remarks = re.sub(r'\s+', ' ', remarks)
+            if remarks:
+                return remarks
+    
+        # Try other general patterns as last resort
         pattern1 = r'Remarks\s*:?\s*\n?(Pre\s*authorization\s+request\s+is\s+approved.*?)(?=(?:Important\s+Note|For\s+Real\s+time|Address|For\s+any\s+cashless|Terms\s+and\s+Conditions))'
         match = re.search(pattern1, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
         if match:
             remarks = match.group(1).strip()
             remarks = re.sub(r'\s+', ' ', remarks)
             return remarks
-        
-        pattern2 = r'Remarks\s*:?\s*([^:]*?)(?=(?:Important\s+Note|For\s+Real\s+time|Address|For\s+any\s+cashless|Terms\s+and\s+Conditions))'
-        match = re.search(pattern2, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
-        if match:
-            remarks = match.group(1).strip()
-            remarks = re.sub(r'\s+', ' ', remarks)
-            if len(remarks) > 50: 
-                return remarks
-        
+    
         return None
     
     def extract_all_data(self, pdf_path):        
