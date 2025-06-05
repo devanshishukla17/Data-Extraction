@@ -86,7 +86,7 @@ class DataExtractor:
             return ""
     
     def clean_extracted_value(self, value, field_name):
-        #print(f"Raw AL Number value before cleaning: '{value}'")
+        """Clean and format extracted values"""
         if not value:
             return None
         
@@ -119,8 +119,14 @@ class DataExtractor:
             if value:
                 value = re.sub(r'[\u00AD\u2010\u2011\u2012\u2013\u2014\u2015]', '-', value.strip())
                 return value
-        return None
         
+        elif field_name == 'Policy Period':
+            value = re.sub(r'-\s*\n\s*', '-', value)
+            value = re.sub(r'\s+', ' ', value)
+            return value.strip()
+        
+        return value
+    
     def extract_field(self, text, field_name):
         patterns = self.patterns.get(field_name, [])
 
@@ -131,16 +137,16 @@ class DataExtractor:
             policy_match = re.search(r'Policy\s+Period\s*:?.*?\n', text, re.IGNORECASE)
             if policy_match:
                 text = text[policy_match.end():]
-    
-        for i, pattern in enumerate(patterns):
-            matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
+
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
             if matches:
-            #     print(f"Pattern {i+1} matched: {pattern}")
-            #     print(f"Raw match: {matches[0]}")
+                #print(f"Pattern {i+1} matched: {pattern}")
+                #print(f"Raw match: {matches[0]}")
                 value = self.clean_extracted_value(matches[0], field_name)
                 if value:
                     return value
-    
+
         return None
     
     def extract_remarks(self, text):
