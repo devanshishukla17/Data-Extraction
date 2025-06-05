@@ -45,9 +45,13 @@ class DataExtractor:
             #     r'Policy\s+Period\s*:?\s*([^:\n]+?)(?:\n|Date\s+of)',
             #     r'Policy\s+Term\s*:?\s*([^:\n]+?)(?:\n|Date\s+of)'
             # ],
+            # 'Policy Period': [
+            #         r'Policy\s+Period\s*:?\s*((?:.(?!\n\s*Date\s+of))+)',
+            #         r'Policy\s+Term\s*:?\s*((?:.(?!\n\s*Date\s+of))+)'  
+            # ],
             'Policy Period': [
-                    r'Policy\s+Period\s*:?\s*((?:.(?!\n\s*Date\s+of))+)',
-                    r'Policy\s+Term\s*:?\s*((?:.(?!\n\s*Date\s+of))+)'  
+                        r'Policy\s+Period\s*:?\s*((?:(?!\n\s*Date\s+of)[\s\S])+)',
+                        r'Policy\s+Term\s*:?\s*((?:(?!\n\s*Date\s+of)[\s\S])+)'
             ],
             'Total Bill Amount': [
                 r'Total\s+Bill\s+Amount\s*:?\s*(\d+)',
@@ -127,8 +131,8 @@ class DataExtractor:
             return value if len(value) > 3 else None
         
         elif field_name == 'Policy Period':
-            value = re.sub(r'\s+', ' ', value)  # Normalize whitespace
-            value = re.sub(r'\n', ' ', value)   # Replace newlines with spaces
+            value = re.sub(r'-\s*\n\s*', '-', value)
+            value = re.sub(r'\s+', ' ', value)
             return value.strip()
         
         return value
