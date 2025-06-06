@@ -86,7 +86,6 @@ class DataExtractor:
             return ""
     
     def clean_extracted_value(self, value, field_name):
-        """Clean and format extracted values"""
         if not value:
             return None
         
@@ -183,7 +182,6 @@ class DataExtractor:
         return extracted_data
     
     def process_pdf(self, pdf_path):
-        """Main method to process PDF and return JSON output"""
         try:
             if not Path(pdf_path).exists():
                 raise FileNotFoundError(f"PDF file not found: {pdf_path}")
