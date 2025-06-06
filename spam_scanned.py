@@ -75,7 +75,7 @@ class DataExtractor:
                     pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                     img_data = pix.tobytes("png")
                     img = Image.open(io.BytesIO(img_data))
-                    page_text = pytesseract.image_to_string(img, config='--psm 4')
+                    page_text = pytesseract.image_to_string(img, config='--psm 6')
 
                 text += page_text + "\n"
 
