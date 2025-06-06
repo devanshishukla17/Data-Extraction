@@ -1,1 +1,1 @@
-This is repository focuses on Data Extraction using OCR techniques like Pytesseract and OpenCV. It is efficient in extracting important data of patients from printed and scanned documents.
+This repository focuses on Data Extraction using OCR techniques like Pytesseract and OpenCV. It is efficient in extracting important data of patients from printed and scanned documents.
