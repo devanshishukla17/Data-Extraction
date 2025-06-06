@@ -152,7 +152,7 @@ class DataExtractor:
     def extract_remarks(self, text):
         stop_keywords = r'(?:For any cashless queries|Note:|Important Note|Important\b|Address|Terms and Conditions|$)'
         pattern1 = rf'Remarks\s*:?\s*\n([\s\S]*?)(?=\s*{stop_keywords})'
-        match = re.search(pattern2, text, re.IGNORECASE)
+        match = re.search(pattern1, text, re.IGNORECASE)
         if match:
             remarks = match.group(1).strip()
             remarks = re.sub(r'\s+', ' ', remarks)
