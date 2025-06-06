@@ -148,47 +148,24 @@ class DataExtractor:
                     return value
 
         return None
-    
-    # def extract_remarks(self, text):
-    #     pattern1 = r'Remarks\s*:?\s*\n?(Pre\s*authorization\s+request\s+is\s+approved.*?)(?=(?:Important\s+Note|For\s+Real\s+time|Address|For\s+any\s+cashless|Terms\s+and\s+Conditions))'
-    #     match = re.search(pattern1, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
-    #     if match:
-    #         remarks = match.group(1).strip()
-    #         remarks = re.sub(r'\s+', ' ', remarks)
-    #         return remarks
         
-    #     pattern2 = r'Remarks\s*:?\s*([^:]*?)(?=(?:Important\s+Note|For\s+Real\s+time|Address|For\s+any\s+cashless|Terms\s+and\s+Conditions))'
-    #     match = re.search(pattern2, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
-    #     if match:
-    #         remarks = match.group(1).strip()
-    #         remarks = re.sub(r'\s+', ' ', remarks)
-    #         if len(remarks) > 50: 
-    #             return remarks
-    
-    
-    
     def extract_remarks(self, text):
-    # Try pattern that captures everything from Remarks until "For any cashless queries"
-        target_pattern = r'Remarks\s*:?\s*\n([\s\S]*?)(?=\s*For any cashless queries)'
-        match = re.search(target_pattern, text, re.IGNORECASE)
-        if match:
-            remarks = match.group(1).strip()
-            remarks = re.sub(r'\s+', ' ', remarks)  # Replace multiple whitespace with single space
-            if remarks:
-                return remarks
-
-    # Fallback pattern if the first one didn't match
-        interim_pattern = r'Remarks\s*:?\s*\n([\s\S]*?)(?=\s*(?:For any cashless queries|Note:|Important Note|$))'
-        match = re.search(interim_pattern, text, re.IGNORECASE)
+        stop_keywords = r'(?:For any cashless queries|Note:|Important Note|Important\b|Address|Terms and Conditions|$)'
+        pattern1 = rf'Remarks\s*:?\s*\n([\s\S]*?)(?=\s*{stop_keywords})'
+        match = re.search(pattern2, text, re.IGNORECASE)
         if match:
             remarks = match.group(1).strip()
             remarks = re.sub(r'\s+', ' ', remarks)
-            if remarks:
-                return remarks
+            return remarks
+
+        pattern2 = rf'Remarks\s*:?\s*([^\n]*?)(?=\s*{stop_keywords})'
+        match = re.search(pattern2, text, re.IGNORECASE)
+        if match:
+            remarks = match.group(1).strip()
+            remarks = re.sub(r'\s+', ' ', remarks)
+            return remarks
 
         return None
-
-
        
     def extract_all_data(self, pdf_path):        
         text = self.extract_text_from_pdf(pdf_path)
