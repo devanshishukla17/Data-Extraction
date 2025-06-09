@@ -16,15 +16,12 @@ class DataExtractor:
         self.patterns = {
             'AL Number': [
                 r'AL\s*Number\s*:?\s*([A-Z0-9\-/]+)',
-                r'Authorization\s*Letter\s*Number\s*:?\s*([A-Z0-9\-/]+)',
-                r'AL\s*No\s*:?\s*([A-Z0-9\-/]+)',
-                r'AL\s*ID\s*:?\s*([A-Z0-9\-/]+)',
-                r'AL\s*:?\s*([A-Z0-9\-/]+)'
+                r'Authorization\s*Letter\s*Number\s*:?\s*([A-Z0-9\-/]+)'
             ],
             'Approved Amount': [
-                r'Approved\s*Amount\s*:?\s*[Rs\.\s]*(\d+)',
-                r'Final\s*Approved\s*Amount\s*:?\s*(\d+)',
-                r'Sanctioned\s*Amount\s*:?\s*(\d+)'
+                r'Final\s*Amount\s*Sanctioned\s*:?\s*Rs\.?\s*(\d+)',
+                r'guarantee\s*for\s*payment\s*of\s*Rs\s*(\d+)',
+                r'Approved\s*Amount\s*:?\s*Rs\.?\s*(\d+)'
             ],
             'Date of Admission': [
                 r'Date\s*of\s*Admission\s*:?\s*([\d-]+[A-Za-z]{3,}[-\d]*)',
@@ -35,7 +32,7 @@ class DataExtractor:
                 r'Discharge\s*Date\s*:?\s*([\d-]+[A-Za-z]{3,}[-\d]*)'
             ],
             'Name of the Patient': [
-                r'Name\s*of\s*Patient\s*:?\s*([A-Z][a-zA-Z\s]+)(?=\s*UHID|\s*Age|\s*Gender)',
+                r'Name\s*of\s*the\s*Patient\s*:?\s*([A-Z][a-zA-Z\s]+)(?=\s*UHID|\s*Policy)',
                 r'Patient\s*Name\s*:?\s*([A-Z][a-zA-Z\s]+)'
             ],
             'Policy No': [
@@ -43,35 +40,42 @@ class DataExtractor:
                 r'Policy\s*Number\s*:?\s*([A-Z0-9\/\-]+)'
             ],
             'Policy Period': [
-                r'Policy\s*Period\s*:?\s*([\d-]+[A-Za-z]{3,}[-\d]*)',
-                r'Policy\s*Term\s*:?\s*([\d-]+[A-Za-z]{3,}[-\d]*)'
+                r'Policy\s*Period\s*:?\s*([\d-]+[A-Za-z]{3,}[-\d]*\s*To\s*[\d-]+[A-Za-z]{3,}[-\d]*)',
+                r'Policy\s*Term\s*:?\s*([\d-]+[A-Za-z]{3,}[-\d]*\s*To\s*[\d-]+[A-Za-z]{3,}[-\d]*)'
             ],
             'Total Bill Amount': [
                 r'Total\s*Bill\s*Amount\s*:?\s*(\d+)',
-                r'Bill\s*Amount\s*:?\s*(\d+)'
+                r'Bill\s*Amount\s*:?\s*(\d+)',
+                r'Final\s*Requested\s*Amount\s*:?\s*Rs\.?\s*(\d+)'
             ],
             'UHID Number': [
                 r'UHID\s*Number\s*:?\s*([A-Z0-9]+)',
                 r'UHID\s*:?\s*([A-Z0-9]+)'
             ],
             'Remarks': [
-                r'Remarks\s*:?\s*(.*?)(?=\n\s*[A-Z][a-z]+\s*:|$)'
+                r'Remarks\s*:?\s*(.*?)(?=\n\s*[A-Z][a-z]+\s*:|$)',
+                r'Remarks\s*:?\s*(.*?)(?=\n\s*For\s+any\s+cashless)'
             ]
         }
 
     def preprocess_image(self, img):
-        """Simpler image preprocessing"""
         try:
-            # Convert to numpy array
             img_np = np.array(img)
-            
-            # Convert to grayscale
             gray = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
             
-            # Simple thresholding
-            _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+            scale_percent = 200  
+            width = int(gray.shape[1] * scale_percent / 100)
+            height = int(gray.shape[0] * scale_percent / 100)
+            dim = (width, height)
+            resized = cv2.resize(gray, dim, interpolation=cv2.INTER_CUBIC)
             
-            return Image.fromarray(thresh)
+            thresh = cv2.adaptiveThreshold(resized, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                          cv2.THRESH_BINARY, 11, 2)
+       
+            kernel = np.ones((1, 1), np.uint8)
+            processed = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+            
+            return Image.fromarray(processed)
         except Exception as e:
             print(f"Preprocessing error: {e}")
             return img
@@ -79,44 +83,29 @@ class DataExtractor:
     def extract_text_from_pdf(self, pdf_path):
         try:
             doc = fitz.open(pdf_path)
-            text = ""
+            full_text = ""
             
             for page_num in range(len(doc)):
                 page = doc.load_page(page_num)
-                
-                # First try to extract text directly
+            
                 page_text = page.get_text()
                 
-                # If no text or very little text, use OCR
-                if len(page_text.strip()) < 50:
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+        
+                if len(page_text.strip()) < 100 or "Name of the Patient" not in page_text:
+                    zoom = 4 
+                    mat = fitz.Matrix(zoom, zoom)
+                    pix = page.get_pixmap(matrix=mat)
                     img_data = pix.tobytes("png")
                     img = Image.open(io.BytesIO(img_data))
                     
-                    # Simple preprocessing
                     processed_img = self.preprocess_image(img)
-                    
-                    # Try with different OCR configurations
-                    try:
-                        # First try with default config
-                        ocr_text = pytesseract.image_to_string(processed_img)
-                        
-                        # If not enough text, try with different PSM
-                        if len(ocr_text.strip()) < 50:
-                            ocr_text = pytesseract.image_to_string(
-                                processed_img, 
-                                config='--psm 6 -c preserve_interword_spaces=1'
-                            )
-                        
-                        page_text = ocr_text
-                    except Exception as e:
-                        print(f"OCR error: {e}")
-                        continue
+                    custom_config = r'--oem 3 --psm 4 -c preserve_interword_spaces=1'
+                    page_text = pytesseract.image_to_string(processed_img, config=custom_config)
                 
-                text += page_text + "\n\n"
+                full_text += page_text + "\n\n"
             
             doc.close()
-            return text
+            return full_text
         
         except Exception as e:
             print(f"Error extracting text: {e}")
@@ -127,41 +116,49 @@ class DataExtractor:
             return None
         
         value = value.strip()
-        
-        # Common cleaning for all fields
-        value = re.sub(r'\s+', ' ', value)  # Replace multiple spaces with single
+        value = re.sub(r'\s+', ' ', value)  
         
         if field_name == 'Name of the Patient':
-            # Remove any special characters except spaces and dots
             value = re.sub(r'[^a-zA-Z\s\.]', '', value)
             value = value.title()
             return value if len(value.split()) >= 2 else None
         
-        elif field_name in ['Date of Admission', 'Date of Discharge', 'Policy Period']:
-            # Fix common OCR errors in dates
+        elif field_name in ['Date of Admission', 'Date of Discharge']:
             value = value.replace('o', '0').replace('O', '0')
-            value = re.sub(r'[^\w\s-]', '-', value)  # Standardize separators
+            value = re.sub(r'[^\w\s-]', '-', value)  
+            month_map = {
+                'JAN': 'JAN', 'FEB': 'FEB', 'MAR': 'MAR',
+                'APR': 'APR', 'MAY': 'MAY', 'JUN': 'JUN',
+                'JUL': 'JUL', 'AUG': 'AUG', 'SEP': 'SEP',
+                'OCT': 'OCT', 'NOV': 'NOV', 'DEC': 'DEC'
+            }
+            for wrong, correct in month_map.items():
+                value = value.replace(wrong.upper(), correct)
+            
             return value.upper() if any(c.isdigit() for c in value) else None
         
+        elif field_name == 'Policy Period':
+            value = value.replace('To', 'to').replace('TO', 'to')
+            value = re.sub(r'[^\w\s-to]', '-', value)
+            return value if any(c.isdigit() for c in value) else None
+        
         elif field_name in ['Approved Amount', 'Total Bill Amount']:
-            # Extract first number found
-            numbers = re.findall(r'\d+', value)
+            numbers = re.findall(r'\d+', value.replace(',', ''))
             return numbers[0] if numbers else None
         
         elif field_name in ['AL Number', 'Policy No', 'UHID Number']:
-            # Remove special characters but keep allowed ones
+
             if field_name == 'AL Number':
-                allowed_chars = r'A-Z0-9\-/'
+                allowed = r'A-Z0-9\-/'
             elif field_name == 'Policy No':
-                allowed_chars = r'A-Z0-9\/\-'
-            else:  # UHID Number
-                allowed_chars = r'A-Z0-9'
+                allowed = r'A-Z0-9\/\-'
+            else:  
+                allowed = r'A-Z0-9'
             
-            value = re.sub(f'[^{allowed_chars}]', '', value.upper())
+            value = re.sub(f'[^{allowed}]', '', value.upper())
             return value if len(value) >= 3 else None
         
         elif field_name == 'Remarks':
-            # Just clean up whitespace
             return value.strip()
         
         return value
@@ -171,10 +168,9 @@ class DataExtractor:
         
         for pattern in patterns:
             try:
-                matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
-                if matches:
-                    # Get the first matching group from the first match
-                    value = matches[0] if isinstance(matches[0], str) else matches[0][0]
+                matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
+                for match in matches:
+                    value = match.group(1).strip()
                     cleaned = self.clean_extracted_value(value, field_name)
                     if cleaned:
                         return cleaned
@@ -191,9 +187,9 @@ class DataExtractor:
             print("No text could be extracted from the PDF")
             return None
         
-        print("=== Extracted Text ===")  # Debug print
-        print(text[:1000])  # Print first 1000 chars for debugging
-        print("=====================")
+        print("=== Extracted Text Sample ===")
+        print(text[:1000] + ("..." if len(text) > 1000 else ""))
+        print("============================")
         
         extracted_data = {}
         for field_name in self.patterns.keys():
@@ -233,7 +229,7 @@ def main():
     if len(sys.argv) == 2:
         pdf_path = sys.argv[1]
     else:
-        pdf_path = "pdf1.pdf"
+        pdf_path = "img_pdf1.pdf"  
         print(f"No command line argument provided, using default: {pdf_path}")
 
     extractor = DataExtractor()
