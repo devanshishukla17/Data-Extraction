@@ -42,6 +42,23 @@ def extract_address(text):
     
     return None
 
+def extract_reasons(text):
+    # Find the table section
+    start_marker = "we desired the following information at the earliest to process the RAL further:"
+    end_marker = "Thanking You"
+    
+    if start_marker in text and end_marker in text:
+        table_section = text.split(start_marker)[1].split(end_marker)[0]
+        # Extract all lines that are part of the table content
+        reasons = []
+        for line in table_section.split('\n'):
+            line = line.strip()
+            if line and not line.startswith('|') and not line.startswith('Sr.No.'):
+                reasons.append(line)
+        # Join with newlines and clean up extra spaces
+        return '\n'.join(reasons).strip()
+    return None
+
 def extract_info_from_pdf(pdf_path):
     extracted_data = {
         "Name of the Patient": "null",
@@ -49,14 +66,15 @@ def extract_info_from_pdf(pdf_path):
         "Hospital Address": "null",
         "CCN": "null",
         "Letter Type": "Request",
-        "MDI ID No": "null"
+        "MDI ID No": "null",
+        "Reason": "null"
     }
     
     try:
         with pdfplumber.open(pdf_path) as pdf:
             text = pdf.pages[0].extract_text()
             
-            # Extract Patient Name (more precise extraction)
+            # Extract Patient Name
             patient_match = re.search(r"Patient Name\s*:\s*([^\n]+)", text)
             if patient_match:
                 extracted_data["Name of the Patient"] = patient_match.group(1).strip().split('\n')[0]
@@ -77,6 +95,11 @@ def extract_info_from_pdf(pdf_path):
             address = extract_address(text)
             if address:
                 extracted_data["Hospital Address"] = address
+            
+            # Extract reasons from the table
+            reasons = extract_reasons(text)
+            if reasons:
+                extracted_data["Reason"] = reasons
     
     except Exception as e:
         print(f"Warning: {str(e)}", file=sys.stderr)
