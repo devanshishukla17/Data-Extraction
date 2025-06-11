@@ -137,31 +137,50 @@ def extract_address_layout(page):
     return ', '.join(full_lines)
 
 def extract_reason_from_pdf(pdf_path):
-    # Try camelot first
+    # First try with camelot
     try:
-        import camelot
         tables = camelot.read_pdf(pdf_path, pages='1', flavor='stream', strip_text='\n')
         for table in tables:
             df = table.df
-            for i, row in df.iterrows():
-                if row[0].strip() == '1' or row[0].strip().lower().startswith("1"):
-                    return row[1].strip()
+            # Check for either "Sr.No." or "Sr No." in header
+            if any(col.lower().replace('.','').strip() in ['srno', 'sr no'] for col in df.iloc[0]):
+                for i, row in df.iterrows():
+                    if str(row[0]).strip() == '1':
+                        # Handle both table formats
+                        if len(row) > 1:
+                            return row[1].strip()
+                        else:
+                            return " ".join([str(x) for x in row if str(x).strip() and not str(x).strip().isdigit()])
     except Exception as e:
         print(f"camelot error: {e}")
 
-    # Fallback to text pattern if table detection fails
+    # Fallback to pdfplumber with more flexible patterns
     try:
         with pdfplumber.open(pdf_path) as pdf:
             text = pdf.pages[0].extract_text()
-            reason_block = re.search(r"Sr\s*No\.\s*Reason\(s\)\s*1\s*(.+?)(?:Explanation|As per|Note)", text, re.IGNORECASE | re.DOTALL)
-            if reason_block:
-                return reason_block.group(1).strip().replace('\n', ' ')
+            
+            # Pattern for first table format (Particular(s))
+            pattern1 = re.compile(r"Sr\.?No\.?\s*Particular\(s\)\s*1\s*(.+?)(?:Thanking|Authorized|$)", re.IGNORECASE | re.DOTALL)
+            # Pattern for second table format (Reason(s))
+            pattern2 = re.compile(r"Sr\s*No\.?\s*1\s*Reason\(s\)\s*(.+?)(?:Explanation|As per|$)", re.IGNORECASE | re.DOTALL)
+    
+            for pattern in [pattern1, pattern2]:
+                match = pattern.search(text)
+                if match:
+                    reason = match.group(1).strip()
+                    # Clean up extra spaces and newlines
+                    reason = ' '.join(reason.split())
+                    return reason
+                    
+            # Try to find the denial reason in the text directly
+            denial_match = re.search(r"following reasons:\s*(.+?)(?:Explanation|As per|Note|$)", text, re.IGNORECASE | re.DOTALL)
+            if denial_match:
+                return denial_match.group(1).strip()
+                
     except Exception as e:
-        print(f"text fallback error: {e}")
+        print(f"pdfplumber error: {e}")
 
     return "null"
-
-
 
 def extract_info_from_pdf(pdf_path):
     extracted_data = {
