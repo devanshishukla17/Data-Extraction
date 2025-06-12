@@ -105,11 +105,9 @@ def extract_info_from_pdf(pdf_path):
                 extracted_data["Name of the Patient"] = match.group(1).strip()
                 
             #Type of letter
-            match = re.search(r'DENIAL\s+OF\s+AUTHORIZATION\s+LETTER',text)
+            match = re.search(r'Cashless\s+Authorisation\s+Letter',text)
             if match:
-                extracted_data["Letter Type"]="Authorization Denied"
-            else:
-                extracted_data["Letter Type"]="Query Letter"
+                extracted_data["Letter Type"]="Approval"
 
             # Policy No
             match = re.search(r"Policy\s*No\.?\s*:\s*([^\s\n]+)", text)
