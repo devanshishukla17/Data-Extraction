@@ -86,7 +86,7 @@ def extract_info_from_pdf(pdf_path):
         "Name of the Patient": "null",
         "Policy No": "null",
         "Hospital Address": "null",
-        "CCN": "null",
+        "Rohini ID": "null",
         "Letter Type": "null",
         "MD ID No": "null",
         "Reason": "null"
@@ -119,10 +119,10 @@ def extract_info_from_pdf(pdf_path):
             if match:
                 extracted_data["MD ID No"] = match.group(1).strip()
 
-            # CCN
-            match = re.search(r"CCN\s*:\s*([^\s\n]+)", text)
+            # ROHINI ID 
+            match = re.search(r"Rohini\s+ID\s*:\s*([^\s\n]+)", text)
             if match:
-                extracted_data["CCN"] = match.group(1).strip()
+                extracted_data["Rohini ID"] = match.group(1).strip()
 
             # Reason using camelot
             extracted_data["Reason"] = extract_reason_from_pdf(pdf_path)
