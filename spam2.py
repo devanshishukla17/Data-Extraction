@@ -82,38 +82,39 @@ def extract_reason_from_pdf(pdf_path):
     return "null"
 
 def extract_table_data(text):
-    """Extracts data from the table structure after 'mentioned below'"""
+    """Extracts clean data from the table structure after 'mentioned below'"""
     data = {}
     
-    # Patient Name
+    # Patient Name (already working correctly)
     match = re.search(r"Patient Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)", text)
     if match:
         data["Name of the Patient"] = match.group(1).strip()
     
-    # Policy Number
-    match = re.search(r"Policy Number\s*:\s*([^\n]+)", text)
+    # Policy Number (capture just the number)
+    match = re.search(r"Policy Number\s*:\s*([A-Za-z0-9\/-]+)", text)
     if match:
         data["Policy No"] = match.group(1).strip()
     
-    # Dates
-    match = re.search(r"Expected Date of Admission\s*:\s*([^\n]+)", text)
+    # Dates (capture just the date)
+    match = re.search(r"Expected Date of Admission\s*:\s*(\d{2}\/\d{2}\/\d{4})", text)
     if match:
         data["Date of Admission"] = match.group(1).strip()
     
-    match = re.search(r"Expected Date of Discharge\s*:\s*([^\n]+)", text)
+    match = re.search(r"Expected Date of Discharge\s*:\s*(\d{2}\/\d{2}\/\d{4})", text)
     if match:
         data["Date of Discharge"] = match.group(1).strip()
     
-    # Room Category
-    match = re.search(r"Room Category\s*:\s*([^\n]+)", text)
+    # Room Category (capture just the category)
+    match = re.search(r"Room Category\s*:\s*([^\n]+?)(?=\s*Estimated|$)", text)
     if match:
         data["Room Category"] = match.group(1).strip()
     
-    # Diagnosis and Treatment
-    match = re.search(r"Provisional Diagnosis\s*:\s*([^\n]+)", text)
+    # Diagnosis (capture just the diagnosis)
+    match = re.search(r"Provisional Diagnosis\s*:\s*([^\n]+?)(?=\s*Proposed|$)", text)
     if match:
         data["Provisional Diagnosis"] = match.group(1).strip()
     
+    # Treatment (capture just the treatment)
     match = re.search(r"Proposed Line of Treatment\s*:\s*([^\n]+)", text)
     if match:
         data["Proposed Treatment"] = match.group(1).strip()
@@ -144,7 +145,7 @@ def extract_info_from_pdf(pdf_path):
 
             extracted_data["Hospital Address"] = extract_address_layout(page)
             
-            # Extract data from the table structure
+            # Extract clean data from the table structure
             table_data = extract_table_data(text)
             extracted_data.update(table_data)
             
