@@ -81,16 +81,46 @@ def extract_reason_from_pdf(pdf_path):
 
     return "null"
 
-def extract_info_from_pdf(pdf_path):
+def extract_table_data(text):
+    """Extracts data from the table structure after 'mentioned below'"""
+    data = {}
     
-    """
-    "Approved Amount": "30000",
-    "Date & Time": "null",
-    "Date of Admission": "02/06/2025",
-    "Date of Discharge": "07/06/2025 12:00 PM",
-    "Policy Period": "null",
-    "Remarks": "This is only conditional.
-    """
+    # Patient Name
+    match = re.search(r"Patient Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)", text)
+    if match:
+        data["Name of the Patient"] = match.group(1).strip()
+    
+    # Policy Number
+    match = re.search(r"Policy Number\s*:\s*([^\n]+)", text)
+    if match:
+        data["Policy No"] = match.group(1).strip()
+    
+    # Dates
+    match = re.search(r"Expected Date of Admission\s*:\s*([^\n]+)", text)
+    if match:
+        data["Date of Admission"] = match.group(1).strip()
+    
+    match = re.search(r"Expected Date of Discharge\s*:\s*([^\n]+)", text)
+    if match:
+        data["Date of Discharge"] = match.group(1).strip()
+    
+    # Room Category
+    match = re.search(r"Room Category\s*:\s*([^\n]+)", text)
+    if match:
+        data["Room Category"] = match.group(1).strip()
+    
+    # Diagnosis and Treatment
+    match = re.search(r"Provisional Diagnosis\s*:\s*([^\n]+)", text)
+    if match:
+        data["Provisional Diagnosis"] = match.group(1).strip()
+    
+    match = re.search(r"Proposed Line of Treatment\s*:\s*([^\n]+)", text)
+    if match:
+        data["Proposed Treatment"] = match.group(1).strip()
+    
+    return data
+
+def extract_info_from_pdf(pdf_path):
     extracted_data = {
         "Claim Number": "null",
         "Name of the Patient": "null",
@@ -100,6 +130,11 @@ def extract_info_from_pdf(pdf_path):
         "Letter Type": "null",
         "MD ID No": "null",
         "Reason": "null",
+        "Date of Admission": "null",
+        "Date of Discharge": "null",
+        "Room Category": "null",
+        "Provisional Diagnosis": "null",
+        "Proposed Treatment": "null"
     }
      
     try:
@@ -109,25 +144,19 @@ def extract_info_from_pdf(pdf_path):
 
             extracted_data["Hospital Address"] = extract_address_layout(page)
             
+            # Extract data from the table structure
+            table_data = extract_table_data(text)
+            extracted_data.update(table_data)
+            
             # Claim number
             match = re.search(r"Claim\s+Number\s*:\s*([^\s\n]+)", text)
             if match:
                 extracted_data["Claim Number"] = match.group(1).strip()
-
-            # Patient Name - Modified to only capture the exact name
-            match = re.search(r"Patient Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)", text)
-            if match:
-                extracted_data["Name of the Patient"] = match.group(1).strip()
                 
-            #Type of letter
-            match = re.search(r'Cashless\s+Authorisation\s+Letter',text)
+            # Type of letter
+            match = re.search(r'Cashless\s+Authorisation\s+Letter', text)
             if match:
-                extracted_data["Letter Type"]="Approval"
-
-            # Policy No
-            match = re.search(r"Policy\s*No\.?\s*:\s*([^\s\n]+)", text)
-            if match:
-                extracted_data["Policy No"] = match.group(1).strip()
+                extracted_data["Letter Type"] = "Approval"
 
             # MD ID No
             match = re.search(r"MD ID No\s*:\s*([^\s\n]+)", text)
