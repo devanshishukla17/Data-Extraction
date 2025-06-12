@@ -82,6 +82,15 @@ def extract_reason_from_pdf(pdf_path):
     return "null"
 
 def extract_info_from_pdf(pdf_path):
+    
+    """
+    "Approved Amount": "30000",
+    "Date & Time": "null",
+    "Date of Admission": "02/06/2025",
+    "Date of Discharge": "07/06/2025 12:00 PM",
+    "Policy Period": "null",
+    "Remarks": "This is only conditional.
+    """
     extracted_data = {
         "Claim Number": "null",
         "Name of the Patient": "null",
@@ -105,8 +114,8 @@ def extract_info_from_pdf(pdf_path):
             if match:
                 extracted_data["Claim Number"] = match.group(1).strip()
 
-            # Patient Name
-            match = re.search(r"Patient Name\s*:\s*([^\n]+)", text)
+            # Patient Name - Modified to only capture the exact name
+            match = re.search(r"Patient Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)", text)
             if match:
                 extracted_data["Name of the Patient"] = match.group(1).strip()
                 
