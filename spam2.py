@@ -83,13 +83,14 @@ def extract_reason_from_pdf(pdf_path):
 
 def extract_info_from_pdf(pdf_path):
     extracted_data = {
+        "Claim Number": "null",
         "Name of the Patient": "null",
         "Policy No": "null",
         "Hospital Address": "null",
         "Rohini ID": "null",
         "Letter Type": "null",
         "MD ID No": "null",
-        "Reason": "null"
+        "Reason": "null",
     }
      
     try:
@@ -98,6 +99,11 @@ def extract_info_from_pdf(pdf_path):
             text = page.extract_text()
 
             extracted_data["Hospital Address"] = extract_address_layout(page)
+            
+            # Claim number
+            match = re.search(r"Claim\s+Number\s*:\s*([^\s\n]+)", text)
+            if match:
+                extracted_data["Claim Number"] = match.group(1).strip()
 
             # Patient Name
             match = re.search(r"Patient Name\s*:\s*([^\n]+)", text)
