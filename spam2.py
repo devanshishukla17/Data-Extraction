@@ -130,12 +130,14 @@ def extract_info_from_pdf(pdf_path):
         "Rohini ID": "null",
         "Letter Type": "null",
         "MD ID No": "null",
-        "Reason": "null",
         "Date of Admission": "null",
         "Date of Discharge": "null",
         "Room Category": "null",
         "Provisional Diagnosis": "null",
-        "Proposed Treatment": "null"
+        "Proposed Treatment": "null",
+        "Date and Time": "null",
+        "Authorized Amount": "null",
+        "Remarks": "null",
     }
      
     try:
