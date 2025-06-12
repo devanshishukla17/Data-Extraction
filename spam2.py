@@ -1,175 +1,84 @@
-# import pdfplumber
-# import re
-# import sys
-# import json
-
-# def extract_address(text):
-#     if "To," in text and "Policy No" in text:
-#         start_idx = text.find("To,")
-#         end_idx = text.find("Phone")
-#         address_block = text[start_idx:end_idx]
-        
-#         # Find the hospital name (assuming it's before the address lines)
-#         hospital_name = None
-#         for line in address_block.split('\n'):
-#             if "Apollo" in line and "Hospitals" in line:
-#                 hospital_name = line.strip()
-#                 break
-        
-#         # Find the address line starting with #
-#         address_lines = []
-#         for line in address_block.split('\n'):
-#             line = line.strip()
-#             if line.startswith('#'):
-#                 # Extract just the address portion
-#                 address = line.split('#')[-1].strip()
-#                 # Remove any trailing field labels
-#                 address = re.sub(r'\b(?:CCN|MDI|Patient|Policy)\b.*', '', address)
-#                 address_lines.append(address)
-#             elif address_lines and not any(x in line for x in [':', 'CCN', 'MDI']):
-#                 # Continue address if it's part of the same block
-#                 address_lines.append(line)
-        
-#         if address_lines:
-#             # Join and clean the address
-#             full_address = ' '.join(' '.join(address_lines).split())
-#             address_part = full_address.split('Phone')[0].strip()
-            
-#             # Combine hospital name with address if found
-#             if hospital_name:
-#                 return f"{hospital_name}: {address_part}"
-#             return address_part
-    
-#     return None
-
-# def extract_reasons(text):
-#     # Find the table section
-#     start_marker = "we desired the following information at the earliest to process the RAL further:"
-#     end_marker = "Thanking You"
-    
-#     if start_marker in text and end_marker in text:
-#         table_section = text.split(start_marker)[1].split(end_marker)[0]
-#         # Extract all lines that are part of the table content
-#         reasons = []
-#         for line in table_section.split('\n'):
-#             line = line.strip()
-#             if line and not line.startswith('|') and not line.startswith('Sr.No.'):
-#                 reasons.append(line)
-#         # Join with newlines and clean up extra spaces
-#         return '\n'.join(reasons).strip()
-#     return None
-
-# def extract_info_from_pdf(pdf_path):
-#     extracted_data = {
-#         "Name of the Patient": "null",
-#         "Policy No": "null",
-#         "Hospital Address": "null",
-#         "CCN": "null",
-#         "Letter Type": "Request",
-#         "MDI ID No": "null",
-#         "Reason": "null"
-#     }
-    
-#     try:
-#         with pdfplumber.open(pdf_path) as pdf:
-#             text = pdf.pages[0].extract_text()
-            
-#             # Extract Patient Name
-#             patient_match = re.search(r"Patient Name\s*:\s*([^\n]+)", text)
-#             if patient_match:
-#                 extracted_data["Name of the Patient"] = patient_match.group(1).strip().split('\n')[0]
-            
-#             # Extract Policy No
-#             if("Policy No :" or "Policy No.")in text:
-#                 extracted_data["Policy No"] = text.split("Policy No :")[1].split()[0].strip()
-            
-#             # Extract MDI ID No
-#             if "MDI ID No :" in text:
-#                 extracted_data["MDI ID No"] = text.split("MDI ID No :")[1].split()[0].strip()
-            
-#             # Extract CCN
-#             if "CCN :" in text:
-#                 extracted_data["CCN"] = text.split("CCN :")[1].split()[0].strip()
-            
-#             # Extract address
-#             address = extract_address(text)
-#             if address:
-#                 extracted_data["Hospital Address"] = address
-            
-#             # Extract reasons from the table
-#             reasons = extract_reasons(text)
-#             if reasons:
-#                 extracted_data["Reason"] = reasons
-    
-#     except Exception as e:
-#         print(f"Warning: {str(e)}", file=sys.stderr)
-    
-#     return extracted_data
-
-# if __name__ == "__main__":
-#     if len(sys.argv) != 2:
-#         print("Usage: python spam.py <path_to_pdf>")
-#         sys.exit(1)
-    
-#     try:
-#         result = extract_info_from_pdf(sys.argv[1])
-#         print(json.dumps(result, indent=4))
-#     except Exception as e:
-#         print(f"Error: {str(e)}", file=sys.stderr)
-#         sys.exit(1)
-
-
+import camelot
 import pdfplumber
 import re
-import sys
 import json
+import sys
 
-def extract_address(text):
-    # Find the "To," section
-    to_index = text.find("To,")
-    if to_index == -1:
-        return "null"
-    
-    # Find where the address block ends (look for next section)
-    end_markers = ["Phone", "Policy No", "Patient Name", "\n\n"]
-    end_index = len(text)
-    for marker in end_markers:
-        marker_pos = text.find(marker, to_index)
-        if marker_pos != -1 and marker_pos < end_index:
-            end_index = marker_pos
-    
-    # Extract the address block
-    address_block = text[to_index:end_index].strip()
-    
-    # Process the address lines
+def extract_address_layout(page):
+    words = page.extract_words()
     address_lines = []
-    for line in address_block.split('\n'):
-        line = line.strip()
-        # Skip empty lines and lines with field markers
-        if not line or any(x in line for x in [':', 'To,', 'Subject', 'MDI ID No', 'CCN']):
-            continue
-        # Clean up the line
-        line = re.sub(r'^#\s*', '', line)  # Remove # prefix if present
-        address_lines.append(line)
-    
-    # Combine the address lines
-    if address_lines:
-        full_address = ' '.join(' '.join(address_lines).split())
-        return full_address
-    
-    return "null"
+    start_y = None
+    end_y = None
 
-def extract_reasons(text):
-    # Look for the reason after the table header
-    reason_match = re.search(r'Sr No\.\s*\|\s*Reason\(s\)\s*\|\s*\n\s*1\s*\|\s*([^\n]+)', text)
-    if reason_match:
-        return reason_match.group(1).strip()
+    # Find "To,"
+    for w in words:
+        if w['text'].strip() == 'To,':
+            start_y = w['top']
+            break
+    if start_y is None:
+        return "null"
+
+    for w in words:
+        if w['text'].strip() in ['Phone', 'Phone:', 'Fax', 'Fax:'] and w['top'] > start_y:
+            end_y = w['top']
+            break
+    if end_y is None:
+        end_y = start_y + 150
+
+    lines = {}
+    for w in words:
+        if start_y < w['top'] < end_y and w['x0'] < 250:
+            y = round(w['top'], 1)
+            lines.setdefault(y, []).append(w['text'])
+
+    sorted_lines = [lines[y] for y in sorted(lines)]
+    full_lines = [' '.join(line) for line in sorted_lines]
+    return ', '.join(full_lines)
+
+def extract_reason_from_pdf(pdf_path):
+    # First try with camelot
+    try:
+        tables = camelot.read_pdf(pdf_path, pages='1', flavor='stream', strip_text='\n')
+        for table in tables:
+            df = table.df
+            # Check for either "Sr.No." or "Sr No." in header
+            if any(col.lower().replace('.','').strip() in ['srno', 'sr no'] for col in df.iloc[0]):
+                for i, row in df.iterrows():
+                    if str(row[0]).strip() == '1':
+                        # Handle both table formats
+                        if len(row) > 1:
+                            return row[1].strip()
+                        else:
+                            return " ".join([str(x) for x in row if str(x).strip() and not str(x).strip().isdigit()])
+    except Exception as e:
+        print(f"camelot error: {e}")
+
+    # Fallback to pdfplumber with more flexible patterns
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            text = pdf.pages[0].extract_text()
+            
+            # Pattern for first table format (Particular(s))
+            pattern1 = re.compile(r"Sr\.?No\.?\s*Particular\(s\)\s*1\s*(.+?)(?:Thanking|Authorized|$)", re.IGNORECASE | re.DOTALL)
+            # Pattern for second table format (Reason(s))
+            pattern2 = re.compile(r"Sr\s*No\.?\s*1\s*Reason\(s\)\s*(.+?)(?:Explanation|As per|$)", re.IGNORECASE | re.DOTALL)
     
-    # Alternative pattern if the above fails
-    reason_match = re.search(r'1\s*\|\s*([^\n]+)', text)
-    if reason_match:
-        return reason_match.group(1).strip()
-    
+            for pattern in [pattern1, pattern2]:
+                match = pattern.search(text)
+                if match:
+                    reason = match.group(1).strip()
+                    # Clean up extra spaces and newlines
+                    reason = ' '.join(reason.split())
+                    return reason
+                    
+            # Try to find the denial reason in the text directly
+            denial_match = re.search(r"following reasons:\s*(.+?)(?:Explanation|As per|Note|$)", text, re.IGNORECASE | re.DOTALL)
+            if denial_match:
+                return denial_match.group(1).strip()
+                
+    except Exception as e:
+        print(f"pdfplumber error: {e}")
+
     return "null"
 
 def extract_info_from_pdf(pdf_path):
@@ -178,54 +87,58 @@ def extract_info_from_pdf(pdf_path):
         "Policy No": "null",
         "Hospital Address": "null",
         "CCN": "null",
-        "Letter Type": "Denial",
-        "MDI ID No": "null",
+        "Letter Type": "null",
+        "MD ID No": "null",
         "Reason": "null"
     }
-    
+     
     try:
         with pdfplumber.open(pdf_path) as pdf:
-            text = pdf.pages[0].extract_text()
-            
-            # Extract Patient Name
-            patient_match = re.search(r"Patient Name\s*:\s*([^\n]+)", text)
-            if patient_match:
-                extracted_data["Name of the Patient"] = patient_match.group(1).strip()
-            
-            # Extract Policy No (handles both with and without dot)
-            policy_match = re.search(r"Policy No\.?\s*:\s*(\S+)", text)
-            if policy_match:
-                extracted_data["Policy No"] = policy_match.group(1).strip()
-            
-            # Extract MDI ID No (more flexible pattern)
-            mdi_match = re.search(r"MDI ID No\s*:\s*([^\s]+)", text, re.IGNORECASE)
-            if mdi_match:
-                extracted_data["MDI ID No"] = mdi_match.group(1).strip()
-            
-            # Extract CCN
-            ccn_match = re.search(r"CCN\s*:\s*([^\s]+)", text)
-            if ccn_match:
-                extracted_data["CCN"] = ccn_match.group(1).strip()
-            
-            # Extract address
-            extracted_data["Hospital Address"] = extract_address(text)
-            
-            # Extract reason
-            extracted_data["Reason"] = extract_reasons(text)
-    
+            page = pdf.pages[0]
+            text = page.extract_text()
+
+            extracted_data["Hospital Address"] = extract_address_layout(page)
+
+            # Patient Name
+            match = re.search(r"Patient Name\s*:\s*([^\n]+)", text)
+            if match:
+                extracted_data["Name of the Patient"] = match.group(1).strip()
+                
+            #Type of letter
+            match = re.search(r'DENIAL\s+OF\s+AUTHORIZATION\s+LETTER',text)
+            if match:
+                extracted_data["Letter Type"]="Authorization Denied"
+            else:
+                extracted_data["Letter Type"]="Query Letter"
+
+            # Policy No
+            match = re.search(r"Policy\s*No\.?\s*:\s*([^\s\n]+)", text)
+            if match:
+                extracted_data["Policy No"] = match.group(1).strip()
+
+            # MD ID No
+            match = re.search(r"MD ID No\s*:\s*([^\s\n]+)", text)
+            if match:
+                extracted_data["MD ID No"] = match.group(1).strip()
+
+            # CCN
+            match = re.search(r"CCN\s*:\s*([^\s\n]+)", text)
+            if match:
+                extracted_data["CCN"] = match.group(1).strip()
+
+            # Reason using camelot
+            extracted_data["Reason"] = extract_reason_from_pdf(pdf_path)
+
     except Exception as e:
         print(f"Warning: {str(e)}", file=sys.stderr)
-    
+
     return extracted_data
 
+# CLI usage
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python script.py <path_to_pdf>")
         sys.exit(1)
-    
-    try:
-        result = extract_info_from_pdf(sys.argv[1])
-        print(json.dumps(result, indent=4))
-    except Exception as e:
-        print(f"Error: {str(e)}", file=sys.stderr)
-        sys.exit(1)
+
+    result = extract_info_from_pdf(sys.argv[1])
+    print(json.dumps(result, indent=4))
