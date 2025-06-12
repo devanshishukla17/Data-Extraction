@@ -53,14 +53,11 @@ def extract_reason_from_pdf(pdf_path):
     except Exception as e:
         print(f"camelot error: {e}")
 
-    # Fallback to pdfplumber with more flexible patterns
     try:
         with pdfplumber.open(pdf_path) as pdf:
             text = pdf.pages[0].extract_text()
             
-            # Pattern for first table format (Particular(s))
             pattern1 = re.compile(r"Sr\.?No\.?\s*Particular\(s\)\s*1\s*(.+?)(?:Thanking|Authorized|$)", re.IGNORECASE | re.DOTALL)
-            # Pattern for second table format (Reason(s))
             pattern2 = re.compile(r"Sr\s*No\.?\s*1\s*Reason\(s\)\s*(.+?)(?:Explanation|As per|$)", re.IGNORECASE | re.DOTALL)
     
             for pattern in [pattern1, pattern2]:
@@ -71,31 +68,62 @@ def extract_reason_from_pdf(pdf_path):
                     reason = ' '.join(reason.split())
                     return reason
                     
-            # Try to find the denial reason in the text directly
             denial_match = re.search(r"following reasons:\s*(.+?)(?:Explanation|As per|Note|$)", text, re.IGNORECASE | re.DOTALL)
             if denial_match:
                 return denial_match.group(1).strip()
                 
     except Exception as e:
         print(f"pdfplumber error: {e}")
-
     return "null"
 
+def extract_authorization_details(text):
+    auth_details = {
+        "Date and Time": {},
+        "Authorized Amount": 0
+    }
+    
+    auth_section = re.search(r"Authorization Details\s*:(.*?)(?:Total Authorized Amount|Authorisation Remarks|$)", text, re.DOTALL | re.IGNORECASE)
+    if not auth_section:
+        return auth_details
+    block = auth_section.group(1)
+
+    pattern = re.compile(
+        r"(\d{2}/\d{2}/\d{4})\s+(\d{1,2}:\d{2}:\d{2}[AP]M)\s+[A-Z0-9]+\s+([\d,]+(?:\.\d{2})?)\s+([A-Z][A-Z\s]+)",
+        re.IGNORECASE
+    )
+    matches = list(pattern.finditer(block))
+
+    for m in matches:
+        date = m.group(1)
+        time = m.group(2)
+        amount = m.group(3)
+        status = m.group(4).strip()
+
+        dt_key = f"{date} {time}"
+        auth_details["Date and Time"][dt_key] = status
+
+        try:
+            auth_details["Authorized Amount"] += int(amount.replace(',', '').split('.')[0])
+        except ValueError:
+            continue
+
+    return auth_details
+
+
 def extract_table_data(text):
-    """Extracts clean data from the table structure after 'mentioned below'"""
     data = {}
     
-    # Patient Name (already working correctly)
+    # Patient Name 
     match = re.search(r"Patient Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)", text)
     if match:
         data["Name of the Patient"] = match.group(1).strip()
     
-    # Policy Number (capture just the number)
+    # Policy Number 
     match = re.search(r"Policy Number\s*:\s*([A-Za-z0-9\/-]+)", text)
     if match:
         data["Policy No"] = match.group(1).strip()
     
-    # Dates (capture just the date)
+    # Dates 
     match = re.search(r"Expected Date of Admission\s*:\s*(\d{2}\/\d{2}\/\d{4})", text)
     if match:
         data["Date of Admission"] = match.group(1).strip()
@@ -104,17 +132,17 @@ def extract_table_data(text):
     if match:
         data["Date of Discharge"] = match.group(1).strip()
     
-    # Room Category (capture just the category)
+    # Room Category 
     match = re.search(r"Room Category\s*:\s*([^\n]+?)(?=\s*Estimated|$)", text)
     if match:
         data["Room Category"] = match.group(1).strip()
     
-    # Diagnosis (capture just the diagnosis)
+    # Diagnosis 
     match = re.search(r"Provisional Diagnosis\s*:\s*([^\n]+?)(?=\s*Proposed|$)", text)
     if match:
         data["Provisional Diagnosis"] = match.group(1).strip()
     
-    # Treatment (capture just the treatment)
+    # Treatment 
     match = re.search(r"Proposed Line of Treatment\s*:\s*([^\n]+)", text)
     if match:
         data["Proposed Treatment"] = match.group(1).strip()
@@ -130,14 +158,14 @@ def extract_info_from_pdf(pdf_path):
         "Rohini ID": "null",
         "Letter Type": "null",
         "MD ID No": "null",
+        "Reason": "null",
         "Date of Admission": "null",
         "Date of Discharge": "null",
         "Room Category": "null",
         "Provisional Diagnosis": "null",
         "Proposed Treatment": "null",
-        "Date and Time": "null",
-        "Authorized Amount": "null",
-        "Remarks": "null",
+        "Date and Time": {},
+        "Authorized Amount": 0
     }
      
     try:
@@ -150,6 +178,11 @@ def extract_info_from_pdf(pdf_path):
             # Extract clean data from the table structure
             table_data = extract_table_data(text)
             extracted_data.update(table_data)
+            
+            # Extract authorization details
+            auth_data = extract_authorization_details(text)
+            extracted_data["Date and Time"] = auth_data["Date and Time"]
+            extracted_data["Authorized Amount"] = auth_data["Authorized Amount"]
             
             # Claim number
             match = re.search(r"Claim\s+Number\s*:\s*([^\s\n]+)", text)
