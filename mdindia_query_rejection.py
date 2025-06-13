@@ -1,4 +1,3 @@
-import camelot
 import pdfplumber
 import re
 import json
@@ -9,6 +8,7 @@ def extract_address_layout(page):
     address_lines = []
     start_y = None
     end_y = None
+    stop_processing = False
 
     # Find "To,"
     for w in words:
@@ -18,6 +18,7 @@ def extract_address_layout(page):
     if start_y is None:
         return "null"
 
+    # Find end marker (Phone/Fax)
     for w in words:
         if w['text'].strip() in ['Phone', 'Phone:', 'Fax', 'Fax:'] and w['top'] > start_y:
             end_y = w['top']
@@ -27,58 +28,48 @@ def extract_address_layout(page):
 
     lines = {}
     for w in words:
+        # Stop processing if we hit "Inlias ID"
+        if 'Inlias' in w['text'] or ('ID' in w['text'] and ':' in w['text']):
+            stop_processing = True
+            continue
+            
+        if stop_processing:
+            continue
+            
         if start_y < w['top'] < end_y and w['x0'] < 250:
             y = round(w['top'], 1)
             lines.setdefault(y, []).append(w['text'])
 
     sorted_lines = [lines[y] for y in sorted(lines)]
     full_lines = [' '.join(line) for line in sorted_lines]
-    return ', '.join(full_lines)
+    
+    # Join and clean the address
+    address = ', '.join(full_lines)
+    
+    # Final cleanup to remove any trailing commas or spaces
+    address = address.rstrip(', ')
+    
+    return address if address else "null"
 
 def extract_reason_from_pdf(pdf_path):
-    # First try with camelot
-    try:
-        tables = camelot.read_pdf(pdf_path, pages='1', flavor='stream', strip_text='\n')
-        for table in tables:
-            df = table.df
-            # Check for either "Sr.No." or "Sr No." in header
-            if any(col.lower().replace('.','').strip() in ['srno', 'sr no'] for col in df.iloc[0]):
-                for i, row in df.iterrows():
-                    if str(row[0]).strip() == '1':
-                        # Handle both table formats
-                        if len(row) > 1:
-                            return row[1].strip()
-                        else:
-                            return " ".join([str(x) for x in row if str(x).strip() and not str(x).strip().isdigit()])
-    except Exception as e:
-        print(f"camelot error: {e}")
-
-    # Fallback to pdfplumber with more flexible patterns
     try:
         with pdfplumber.open(pdf_path) as pdf:
             text = pdf.pages[0].extract_text()
-            
-            # Pattern for first table format (Particular(s))
-            pattern1 = re.compile(r"Sr\.?No\.?\s*Particular\(s\)\s*1\s*(.+?)(?:Thanking|Authorized|$)", re.IGNORECASE | re.DOTALL)
-            # Pattern for second table format (Reason(s))
-            pattern2 = re.compile(r"Sr\s*No\.?\s*1\s*Reason\(s\)\s*(.+?)(?:Explanation|As per|$)", re.IGNORECASE | re.DOTALL)
-    
-            for pattern in [pattern1, pattern2]:
-                match = pattern.search(text)
-                if match:
-                    reason = match.group(1).strip()
-                    # Clean up extra spaces and newlines
-                    reason = ' '.join(reason.split())
-                    return reason
-                    
-            # Try to find the denial reason in the text directly
+
+            # Match line starting with 1 and followed by the reason
+            reason_match = re.search(r'\b1\s+(.+?)(?=Thanking|Authorized|Explanation|As per|Note|$)', text, re.DOTALL | re.IGNORECASE)
+            if reason_match:
+                reason = reason_match.group(1).strip()
+                reason = ' '.join(reason.split())
+                return reason
+
+            # Backup: check for "following reasons"
             denial_match = re.search(r"following reasons:\s*(.+?)(?:Explanation|As per|Note|$)", text, re.IGNORECASE | re.DOTALL)
             if denial_match:
                 return denial_match.group(1).strip()
-                
+
     except Exception as e:
         print(f"pdfplumber error: {e}")
-
     return "null"
 
 def extract_info_from_pdf(pdf_path):
@@ -91,7 +82,7 @@ def extract_info_from_pdf(pdf_path):
         "MDI ID No": "null",
         "Reason": "null"
     }
-     
+
     try:
         with pdfplumber.open(pdf_path) as pdf:
             page = pdf.pages[0]
@@ -100,33 +91,34 @@ def extract_info_from_pdf(pdf_path):
             extracted_data["Hospital Address"] = extract_address_layout(page)
 
             # Patient Name
-            match = re.search(r"Patient Name\s*:\s*([^\n]+)", text)
+            match = re.search(r"Patient\s*Name\s*:\s*([^\n]+)", text, re.IGNORECASE)
             if match:
                 extracted_data["Name of the Patient"] = match.group(1).strip()
-                
-            #Type of letter
-            match = re.search(r'DENIAL\s+OF\s+AUTHORIZATION\s+LETTER',text)
-            if match:
-                extracted_data["Letter Type"]="Authorization Denied"
+
+            # Letter Type
+            if re.search(r'DENIAL\s+OF\s+AUTHORIZATION\s+LETTER', text, re.IGNORECASE):
+                extracted_data["Letter Type"] = "Authorization Denied"
             else:
-                extracted_data["Letter Type"]="Query Letter"
+                extracted_data["Letter Type"] = "Query Letter"
 
             # Policy No
-            match = re.search(r"Policy\s*No\.?\s*:\s*([^\s\n]+)", text)
+            match = re.search(r"Policy\s*No\.?\s*:\s*([^\s\n]+)", text, re.IGNORECASE)
             if match:
                 extracted_data["Policy No"] = match.group(1).strip()
 
-            # MDI ID No
-            match = re.search(r"MDI ID No\s*:\s*([^\s\n]+)", text)
+            # MDI ID No - more flexible pattern
+            match = re.search(r"MDI\s*(?:ID\s*No\.?)?\s*:\s*([A-Z0-9-]+)", text, re.IGNORECASE)
+            if not match:
+                # Try alternative pattern without colon
+                match = re.search(r"MDI\s*(?:ID\s*No\.?)?\s+([A-Z0-9-]+)", text, re.IGNORECASE)
             if match:
                 extracted_data["MDI ID No"] = match.group(1).strip()
 
             # CCN
-            match = re.search(r"CCN\s*:\s*([^\s\n]+)", text)
+            match = re.search(r"CCN\s*:\s*([^\s\n]+)", text, re.IGNORECASE)
             if match:
                 extracted_data["CCN"] = match.group(1).strip()
 
-            # Reason using camelot
             extracted_data["Reason"] = extract_reason_from_pdf(pdf_path)
 
     except Exception as e:
@@ -142,3 +134,5 @@ if __name__ == "__main__":
 
     result = extract_info_from_pdf(sys.argv[1])
     print(json.dumps(result, indent=4))
+
+
