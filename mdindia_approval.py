@@ -10,7 +10,6 @@ def extract_address_layout(page):
     start_y = None
     end_y = None
 
-    # Find "To,"
     for w in words:
         if w['text'].strip() == 'To,':
             start_y = w['top']
@@ -36,16 +35,13 @@ def extract_address_layout(page):
     return ', '.join(full_lines)
 
 def extract_reason_from_pdf(pdf_path):
-    # First try with camelot
     try:
         tables = camelot.read_pdf(pdf_path, pages='1', flavor='stream', strip_text='\n')
         for table in tables:
             df = table.df
-            # Check for either "Sr.No." or "Sr No." in header
             if any(col.lower().replace('.','').strip() in ['srno', 'sr no'] for col in df.iloc[0]):
                 for i, row in df.iterrows():
                     if str(row[0]).strip() == '1':
-                        # Handle both table formats
                         if len(row) > 1:
                             return row[1].strip()
                         else:
@@ -64,7 +60,6 @@ def extract_reason_from_pdf(pdf_path):
                 match = pattern.search(text)
                 if match:
                     reason = match.group(1).strip()
-                    # Clean up extra spaces and newlines
                     reason = ' '.join(reason.split())
                     return reason
                     
@@ -74,41 +69,43 @@ def extract_reason_from_pdf(pdf_path):
                 
     except Exception as e:
         print(f"pdfplumber error: {e}")
+
+    return "null"
+
+def extract_authorization_remarks(text):
+    match = re.search(r"Authorisation Remarks :(.*?)Please don't collect", text, re.DOTALL | re.IGNORECASE)
+    if match:
+        remarks = match.group(1).strip()
+        remarks = ' '.join(remarks.split())
+        return remarks
     return "null"
 
 def extract_authorization_details(text):
+    """Extracts authorization details from the table"""
     auth_details = {
         "Date and Time": {},
         "Authorized Amount": 0
     }
     
-    auth_section = re.search(r"Authorization Details\s*:(.*?)(?:Total Authorized Amount|Authorisation Remarks|$)", text, re.DOTALL | re.IGNORECASE)
+    auth_section = re.search(r"Authorization Details :(.*?)(?:\n\*\*|$)", text, re.DOTALL | re.IGNORECASE)
     if not auth_section:
         return auth_details
-    block = auth_section.group(1)
-
-    pattern = re.compile(
-        r"(\d{2}/\d{2}/\d{4})\s+(\d{1,2}:\d{2}:\d{2}[AP]M)\s+[A-Z0-9]+\s+([\d,]+(?:\.\d{2})?)\s+([A-Z][A-Z\s]+)",
-        re.IGNORECASE
+    
+    rows = re.finditer(
+        r"(\d{2}/\d{2}/\d{4})\s+(\d{1,2}:\d{2}:\d{2}(?:AM|PM))\s+([A-Z0-9]+)\s+([\d,]+)\s+([A-Z][A-Z\s]+)",
+        auth_section.group(1)
     )
-    matches = list(pattern.finditer(block))
-
-    for m in matches:
-        date = m.group(1)
-        time = m.group(2)
-        amount = m.group(3)
-        status = m.group(4).strip()
-
-        dt_key = f"{date} {time}"
-        auth_details["Date and Time"][dt_key] = status
-
-        try:
-            auth_details["Authorized Amount"] += int(amount.replace(',', '').split('.')[0])
-        except ValueError:
-            continue
-
+    
+    for row in rows:
+        date = row.group(1)
+        time = row.group(2)
+        amount = int(row.group(4).replace(',', ''))
+        status = row.group(5).strip()
+        
+        auth_details["Date and Time"][f"{date} {time}"] = status
+        auth_details["Authorized Amount"] += amount
+    
     return auth_details
-
 
 def extract_table_data(text):
     data = {}
@@ -158,14 +155,16 @@ def extract_info_from_pdf(pdf_path):
         "Rohini ID": "null",
         "Letter Type": "null",
         "MD ID No": "null",
-        "Reason": "null",
         "Date of Admission": "null",
         "Date of Discharge": "null",
         "Room Category": "null",
         "Provisional Diagnosis": "null",
         "Proposed Treatment": "null",
-        "Date and Time": {},
-        "Authorized Amount": 0
+        "Authorization Details": {
+            "Date and Time": {},
+            "Authorized Amount": 0
+        },
+        "Remarks": "null"
     }
      
     try:
@@ -175,44 +174,36 @@ def extract_info_from_pdf(pdf_path):
 
             extracted_data["Hospital Address"] = extract_address_layout(page)
             
-            # Extract clean data from the table structure
             table_data = extract_table_data(text)
             extracted_data.update(table_data)
             
-            # Extract authorization details
             auth_data = extract_authorization_details(text)
-            extracted_data["Date and Time"] = auth_data["Date and Time"]
-            extracted_data["Authorized Amount"] = auth_data["Authorized Amount"]
+            extracted_data["Authorization Details"] = auth_data
             
-            # Claim number
+            extracted_data["Remarks"] = extract_authorization_remarks(text)
+            
             match = re.search(r"Claim\s+Number\s*:\s*([^\s\n]+)", text)
             if match:
                 extracted_data["Claim Number"] = match.group(1).strip()
-                
-            # Type of letter
+        
             match = re.search(r'Cashless\s+Authorisation\s+Letter', text)
             if match:
                 extracted_data["Letter Type"] = "Approval"
 
-            # MD ID No
             match = re.search(r"MD ID No\s*:\s*([^\s\n]+)", text)
             if match:
                 extracted_data["MD ID No"] = match.group(1).strip()
 
-            # ROHINI ID 
             match = re.search(r"Rohini\s+ID\s*:\s*([^\s\n]+)", text)
             if match:
                 extracted_data["Rohini ID"] = match.group(1).strip()
 
-            # Reason using camelot
-            extracted_data["Reason"] = extract_reason_from_pdf(pdf_path)
 
     except Exception as e:
         print(f"Warning: {str(e)}", file=sys.stderr)
 
     return extracted_data
 
-# CLI usage
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python script.py <path_to_pdf>")
