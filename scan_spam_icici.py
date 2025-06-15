@@ -254,49 +254,38 @@ from datetime import datetime
 from PIL import Image
 
 def normalize_text(s):
-    """Normalize text by replacing special characters and whitespace."""
     if s is None:
         return None
     return s.replace('\u00A0', ' ').replace('­', '-').replace('–', '-').replace('—', '-').strip()
 
 def clean_patient_name(name_text):
-    """Clean patient name by removing trailing text like 'Policy related Deductions'."""
     if not name_text:
         return None
         
-    # Split by common separators that might appear in the line
     for separator in ["Policy", "Co-Pay", "UHID", ":", "  "]:
         if separator in name_text:
             name_text = name_text.split(separator)[0].strip()
     
-    # Remove any trailing whitespace or punctuation
     name_text = name_text.strip()
-    
     return name_text
 
 def extract_policy_period(text, debug=False):
-    """Extract policy period from text with improved handling for multi-line periods."""
     lines = text.split("\n")
     policy_period_value = None
     
-    # First pass: Look for complete policy period on a single line
     for i, line in enumerate(lines):
         normalized_line = normalize_text(line)
-        # Look for the line containing "Policy Period"
         if re.search(r"Policy\s+Period", normalized_line, re.IGNORECASE):
             if debug: print(f"DEBUG: Found potential Policy Period line {i}: ", repr(normalized_line))
             
-            # Extract the value part after "Policy Period" (and optional colon)
             match = re.search(r"Policy\s+Period\s*:?\s*(.*)", normalized_line, re.IGNORECASE)
             if match:
                 current_value = match.group(1).strip()
                 if debug: print(f"DEBUG: Initial value from line {i}: ", repr(current_value))
                 
-                # If the value is empty or just contains a colon, check the next line
                 if not current_value or current_value == ":":
                     if debug: print(f"DEBUG: Empty value on line {i}, checking next line")
                     
-                    # Look at the next non-empty line
                     next_line_index = i + 1
                     while next_line_index < len(lines) and not lines[next_line_index].strip():
                         next_line_index += 1
@@ -304,21 +293,17 @@ def extract_policy_period(text, debug=False):
                     if next_line_index < len(lines):
                         next_line = normalize_text(lines[next_line_index])
                         if debug: print(f"DEBUG: Next non-empty line {next_line_index}: ", repr(next_line))
-                        
-                        # Check if the next line contains a date range
                         date_range_match = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4}\s+to\s+\d{1,2}-[A-Za-z]{3}-\d{4})", next_line, re.IGNORECASE)
                         if date_range_match:
                             policy_period_value = date_range_match.group(1)
                             if debug: print(f"DEBUG: Found complete date range on next line: ", repr(policy_period_value))
                             break
-                        
-                        # Check if the next line contains a partial date range
+
                         partial_match = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4}\s+to\s+\d{1,2}-[A-Za-z]{3}-)", next_line, re.IGNORECASE)
                         if partial_match:
                             partial_value = partial_match.group(1)
                             if debug: print(f"DEBUG: Found partial date range on next line: ", repr(partial_value))
                             
-                            # Look for the year on the line after that
                             year_line_index = next_line_index + 1
                             while year_line_index < len(lines) and not lines[year_line_index].strip():
                                 year_line_index += 1
@@ -327,80 +312,64 @@ def extract_policy_period(text, debug=False):
                                 year_line = normalize_text(lines[year_line_index])
                                 if debug: print(f"DEBUG: Checking line {year_line_index} for year: ", repr(year_line))
                                 
-                                # Check if the line starts with a 4-digit year
                                 year_match = re.match(r"^(\d{4})", year_line)
                                 if year_match:
                                     year = year_match.group(1)
                                     policy_period_value = partial_value + year 
                                     if debug: print(f"DEBUG: Combined with year from line {year_line_index}: ", repr(policy_period_value))
                                     break
-                        
-                        # If no date pattern found, use the entire next line as a fallback
-                        if not policy_period_value and re.search(r"\d", next_line):  # Only if it contains at least one digit
+                        if not policy_period_value and re.search(r"\d", next_line):  
                             policy_period_value = next_line
                             if debug: print(f"DEBUG: Using entire next line as fallback: ", repr(policy_period_value))
                             break
                 
-                # Check if the value looks like a complete date range
                 complete_match = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4}\s+to\s+\d{1,2}-[A-Za-z]{3}-\d{4})", current_value, re.IGNORECASE)
                 if complete_match:
                     policy_period_value = complete_match.group(1)
                     if debug: print(f"DEBUG: Complete value found on line {i}: ", repr(policy_period_value))
-                    break  # Found complete value, stop searching
+                    break  
                 
-                # Check if the value looks like 'DD-MMM-YYYY to DD-MMM-' (incomplete)
                 incomplete_match = re.match(r"(\d{1,2}-[A-Za-z]{3}-\d{4}\s+to\s+\d{1,2}-[A-Za-z]{3}-)$", current_value, re.IGNORECASE)
                 
                 if incomplete_match or current_value.endswith("-"):
                     if debug: print(f"DEBUG: Value on line {i} appears incomplete: ", repr(current_value))
-                    
-                    # Look ahead for the year on subsequent lines
-                    for j in range(i+1, min(i+5, len(lines))):  # Check up to 5 lines ahead
+                
+                    for j in range(i+1, min(i+5, len(lines))):  
                         next_line = normalize_text(lines[j])
                         if debug: print(f"DEBUG: Checking line {j} for year: ", repr(next_line))
                         
-                        # Check if the next line starts with a 4-digit year
                         year_match = re.match(r"^(\d{4})", next_line)
                         if year_match:
                             year = year_match.group(1)
                             if debug: print(f"DEBUG: Found year on line {j}: ", repr(year))
                             
-                            # Combine: ensure trailing hyphen exists before appending year
                             base_value = current_value.strip()
                             if not base_value.endswith("-"):
                                 base_value += "-"
                             policy_period_value = base_value + year
                             if debug: print(f"DEBUG: Combined value with year: ", repr(policy_period_value))
-                            break  # Found year, stop searching ahead
+                            break  
                         
-                        # Also check if the line contains the full date (sometimes the entire "to DATE" part is on next line)
                         date_match = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4})", next_line)
                         if date_match and "to" not in current_value:
                             end_date = date_match.group(1)
                             if debug: print(f"DEBUG: Found end date on line {j}: ", repr(end_date))
                             
-                            # Check if current_value already has a date
                             if re.search(r"\d{1,2}-[A-Za-z]{3}-\d{4}", current_value):
                                 policy_period_value = f"{current_value.strip()} to {end_date}"
                                 if debug: print(f"DEBUG: Combined with end date: ", repr(policy_period_value))
                                 break
                     
-                    # If we found a combined value, stop the outer loop too
                     if policy_period_value:
                         break
                 else:
-                    # If it doesn't match the specific incomplete pattern, store it as a fallback
-                    # Only store if it contains digits to avoid storing labels like "Policy Period:"
                     if re.search(r"\d", current_value):
                         policy_period_value = current_value
                         if debug: print(f"DEBUG: Using value as fallback: ", repr(policy_period_value))
-                    # Don't break here, continue searching in case a better match exists
     
-    # Second pass: If we didn't find a policy period with the label, look for date patterns
     if not policy_period_value:
         for i, line in enumerate(lines):
             normalized_line = normalize_text(line)
-            # Look for a pattern like "DD-MMM-YYYY to DD-MMM-YYYY"
             date_range_match = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4}\s+to\s+\d{1,2}-[A-Za-z]{3}-\d{4})", normalized_line, re.IGNORECASE)
             if date_range_match:
                 policy_period_value = date_range_match.group(1)
