@@ -81,7 +81,6 @@ def extract_authorization_remarks(text):
     return "null"
 
 def extract_authorization_details(text):
-    """Extracts authorization details from the table"""
     auth_details = {
         "Date and Time": {},
         "Authorized Amount": 0
@@ -120,6 +119,11 @@ def extract_table_data(text):
     if match:
         data["Policy No"] = match.group(1).strip()
     
+    # Policy Period
+    match = re.search(r"Policy Period\s*:\s*(\d{2}\/\d{2}\/\d{4})\s*To\s*(\d{2}\/\d{2}\/\d{4})", text)
+    if match:
+        data["Policy Period"] = f"{match.group(1).strip()} To {match.group(2).strip()}"
+    
     # Dates 
     match = re.search(r"Expected Date of Admission\s*:\s*(\d{2}\/\d{2}\/\d{4})", text)
     if match:
@@ -128,22 +132,7 @@ def extract_table_data(text):
     match = re.search(r"Expected Date of Discharge\s*:\s*(\d{2}\/\d{2}\/\d{4})", text)
     if match:
         data["Date of Discharge"] = match.group(1).strip()
-    
-    # Room Category 
-    match = re.search(r"Room Category\s*:\s*([^\n]+?)(?=\s*Estimated|$)", text)
-    if match:
-        data["Room Category"] = match.group(1).strip()
-    
-    # Diagnosis 
-    match = re.search(r"Provisional Diagnosis\s*:\s*([^\n]+?)(?=\s*Proposed|$)", text)
-    if match:
-        data["Provisional Diagnosis"] = match.group(1).strip()
-    
-    # Treatment 
-    match = re.search(r"Proposed Line of Treatment\s*:\s*([^\n]+)", text)
-    if match:
-        data["Proposed Treatment"] = match.group(1).strip()
-    
+
     return data
 
 def extract_info_from_pdf(pdf_path):
@@ -151,15 +140,13 @@ def extract_info_from_pdf(pdf_path):
         "Claim Number": "null",
         "Name of the Patient": "null",
         "Policy No": "null",
+        "Policy Period": "null",
         "Hospital Address": "null",
         "Rohini ID": "null",
         "Letter Type": "null",
         "MD ID No": "null",
         "Date of Admission": "null",
         "Date of Discharge": "null",
-        "Room Category": "null",
-        "Provisional Diagnosis": "null",
-        "Proposed Treatment": "null",
         "Authorization Details": {
             "Date and Time": {},
             "Authorized Amount": 0
@@ -197,7 +184,6 @@ def extract_info_from_pdf(pdf_path):
             match = re.search(r"Rohini\s+ID\s*:\s*([^\s\n]+)", text)
             if match:
                 extracted_data["Rohini ID"] = match.group(1).strip()
-
 
     except Exception as e:
         print(f"Warning: {str(e)}", file=sys.stderr)
