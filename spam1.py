@@ -131,19 +131,104 @@
 #     result = extract_info_from_pdf(sys.argv[1])
 #     print(json.dumps(result, indent=4))
 
+# import pdfplumber
+# import re
+# import json
+# import sys
+
+# def suppress_warnings():
+#     import warnings
+#     warnings.filterwarnings("ignore", message="CropBox missing from /Page, defaulting to MediaBox")
+
+# def extract_info_from_pdf(pdf_path):
+#     suppress_warnings()
+    
+#     extracted_data = {
+#         "Name of the Patient": "null",
+#         "Policy No": "null",
+#         "Policy Period": "null",
+#         "Date of Admission": "null",
+#         "Date of Discharge": "null"
+#     }
+
+#     try:
+#         with pdfplumber.open(pdf_path) as pdf:
+#             page = pdf.pages[0]
+#             text = page.extract_text()
+
+#             # More precise Patient Name extraction
+#             patient_match = re.search(
+#                 r"Patient\s*Name\s*:\s*([A-Z][^\n]+?)\s*(?:\n|Age\s*:|$)", 
+#                 text, 
+#                 re.DOTALL
+#             )
+#             if patient_match:
+#                 name = ' '.join(patient_match.group(1).strip().split())
+#                 extracted_data["Name of the Patient"] = name
+
+#             # Policy Number
+#             policy_match = re.search(r"Policy\s*No\s*:\s*([A-Z0-9]+)", text)
+#             if policy_match:
+#                 extracted_data["Policy No"] = policy_match.group(1).strip()
+
+#             # Policy Period
+#             period_match = re.search(
+#                 r"Policy\s*period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})", 
+#                 text
+#             )
+#             if period_match:
+#                 extracted_data["Policy Period"] = f"{period_match.group(1)} To {period_match.group(2)}"
+
+#             # Date of Admission - more specific pattern
+#             admission_match = re.search(
+#                 r"Expected\s*Date\s*of\s*Admission\s*:\s*(\d{2}-\w{3}-\d{4})", 
+#                 text
+#             )
+#             if not admission_match:
+#                 admission_match = re.search(
+#                     r"Expected\s*Date\s*of\s*Admission\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", 
+#                     text
+#                 )
+#             if admission_match:
+#                 extracted_data["Date of Admission"] = admission_match.group(1)
+
+#             # Date of Discharge - more specific pattern
+#             discharge_match = re.search(
+#                 r"Expected\s*Date\s*of\s*Discharge\s*:\s*(\d{2}-\w{3}-\d{4})", 
+#                 text
+#             )
+#             if not discharge_match:
+#                 discharge_match = re.search(
+#                     r"Expected\s*Date\s*of\s*Discharge\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", 
+#                     text
+#                 )
+#             if discharge_match:
+#                 extracted_data["Date of Discharge"] = discharge_match.group(1)
+
+#     except Exception as e:
+#         print(f"Error processing PDF: {str(e)}", file=sys.stderr)
+
+#     return extracted_data
+
+# if __name__ == "__main__":
+#     if len(sys.argv) != 2:
+#         print("Usage: python script.py <path_to_pdf>")
+#         sys.exit(1)
+
+#     result = extract_info_from_pdf(sys.argv[1])
+#     print(json.dumps(result, indent=4))
+
 import pdfplumber
 import re
 import json
 import sys
-from pdfminer.layout import LAParams
-from pdfminer.high_level import extract_text
 
-#def suppress_warnings():
-    #import warnings
-    #warnings.filterwarnings("ignore", message="CropBox missing from /Page, defaulting to MediaBox")
+def suppress_warnings():
+    import warnings
+    warnings.filterwarnings("ignore", message="CropBox missing from /Page, defaulting to MediaBox")
 
 def extract_info_from_pdf(pdf_path):
-    #suppress_warnings()
+    suppress_warnings()
     
     extracted_data = {
         "Name of the Patient": "null",
@@ -154,36 +239,59 @@ def extract_info_from_pdf(pdf_path):
     }
 
     try:
-        laparams = LAParams(line_margin=1.0)
-        text = extract_text(pdf_path, laparams=laparams)
-        patient_match = re.search(r"Patient\s*Name\s*:\s*(.*?)\s*Age\s*:", text, re.DOTALL)
-        if patient_match:
-            name = ' '.join(patient_match.group(1).strip().split())
-            extracted_data["Name of the Patient"] = name if name else "null"
+        with pdfplumber.open(pdf_path) as pdf:
+            page = pdf.pages[0]
+            text = page.extract_text()
 
-        # Policy Number
-        policy_match = re.search(r"Policy\s*No\s*:\s*(\S+)", text)
-        if policy_match:
-            extracted_data["Policy No"] = policy_match.group(1).strip()
+            # Improved Patient Name extraction to handle multi-line names
+            # Look for "Patient Name" followed by any text until "Age"
+            patient_match = re.search(
+                r"Patient\s*Name\s*:\s*([\s\S]+?)\s*Age\s*:", 
+                text
+            )
+            if patient_match:
+                # Clean up the name - remove extra spaces and newlines
+                name = ' '.join(patient_match.group(1).strip().split())
+                extracted_data["Name of the Patient"] = name
 
-        # Policy Period
-        period_match = re.search(r"Policy\s*period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})", text)
-        if period_match:
-            extracted_data["Policy Period"] = f"{period_match.group(1)} To {period_match.group(2)}"
+            # Policy Number
+            policy_match = re.search(r"Policy\s*No\s*:\s*([A-Z0-9]+)", text)
+            if policy_match:
+                extracted_data["Policy No"] = policy_match.group(1).strip()
 
-        # Admission Date - handles cases where date is on next line
-        admission_match = re.search(r"Expected\s*Date\s*of\s*Admission\s*:\s*(\d{2}-\w{3}-\d{4})", text)
-        if not admission_match:
-            admission_match = re.search(r"Expected\s*Date\s*of\s*Admission\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", text)
-        if admission_match:
-            extracted_data["Date of Admission"] = admission_match.group(1)
+            # Policy Period
+            period_match = re.search(
+                r"Policy\s*period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})", 
+                text
+            )
+            if period_match:
+                extracted_data["Policy Period"] = f"{period_match.group(1)} To {period_match.group(2)}"
 
-        # Discharge Date - handles cases where date is on next line
-        discharge_match = re.search(r"Expected\s*Date\s*of\s*Discharge\s*:\s*(\d{2}-\w{3}-\d{4})", text)
-        if not discharge_match:
-            discharge_match = re.search(r"Expected\s*Date\s*of\s*Discharge\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", text)
-        if discharge_match:
-            extracted_data["Date of Discharge"] = discharge_match.group(1)
+            # Date of Admission
+            admission_match = re.search(
+                r"Expected\s*Date\s*of\s*Admission\s*:\s*(\d{2}-\w{3}-\d{4})", 
+                text
+            )
+            if not admission_match:
+                admission_match = re.search(
+                    r"Expected\s*Date\s*of\s*Admission\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", 
+                    text
+                )
+            if admission_match:
+                extracted_data["Date of Admission"] = admission_match.group(1)
+
+            # Date of Discharge
+            discharge_match = re.search(
+                r"Expected\s*Date\s*of\s*Discharge\s*:\s*(\d{2}-\w{3}-\d{4})", 
+                text
+            )
+            if not discharge_match:
+                discharge_match = re.search(
+                    r"Expected\s*Date\s*of\s*Discharge\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", 
+                    text
+                )
+            if discharge_match:
+                extracted_data["Date of Discharge"] = discharge_match.group(1)
 
     except Exception as e:
         print(f"Error processing PDF: {str(e)}", file=sys.stderr)
