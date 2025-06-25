@@ -131,177 +131,219 @@
 #     result = extract_info_from_pdf(sys.argv[1])
 #     print(json.dumps(result, indent=4))
 
-# import pdfplumber
-# import re
-# import json
-# import sys
+#---------------------------------------------------------------------------------------------------------------------
 
-# def suppress_warnings():
-#     import warnings
-#     warnings.filterwarnings("ignore", message="CropBox missing from /Page, defaulting to MediaBox")
-
-# def extract_info_from_pdf(pdf_path):
-#     suppress_warnings()
-    
-#     extracted_data = {
-#         "Name of the Patient": "null",
-#         "Policy No": "null",
-#         "Policy Period": "null",
-#         "Date of Admission": "null",
-#         "Date of Discharge": "null"
-#     }
-
-#     try:
-#         with pdfplumber.open(pdf_path) as pdf:
-#             page = pdf.pages[0]
-#             text = page.extract_text()
-
-#             # More precise Patient Name extraction
-#             patient_match = re.search(
-#                 r"Patient\s*Name\s*:\s*([A-Z][^\n]+?)\s*(?:\n|Age\s*:|$)", 
-#                 text, 
-#                 re.DOTALL
-#             )
-#             if patient_match:
-#                 name = ' '.join(patient_match.group(1).strip().split())
-#                 extracted_data["Name of the Patient"] = name
-
-#             # Policy Number
-#             policy_match = re.search(r"Policy\s*No\s*:\s*([A-Z0-9]+)", text)
-#             if policy_match:
-#                 extracted_data["Policy No"] = policy_match.group(1).strip()
-
-#             # Policy Period
-#             period_match = re.search(
-#                 r"Policy\s*period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})", 
-#                 text
-#             )
-#             if period_match:
-#                 extracted_data["Policy Period"] = f"{period_match.group(1)} To {period_match.group(2)}"
-
-#             # Date of Admission - more specific pattern
-#             admission_match = re.search(
-#                 r"Expected\s*Date\s*of\s*Admission\s*:\s*(\d{2}-\w{3}-\d{4})", 
-#                 text
-#             )
-#             if not admission_match:
-#                 admission_match = re.search(
-#                     r"Expected\s*Date\s*of\s*Admission\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", 
-#                     text
-#                 )
-#             if admission_match:
-#                 extracted_data["Date of Admission"] = admission_match.group(1)
-
-#             # Date of Discharge - more specific pattern
-#             discharge_match = re.search(
-#                 r"Expected\s*Date\s*of\s*Discharge\s*:\s*(\d{2}-\w{3}-\d{4})", 
-#                 text
-#             )
-#             if not discharge_match:
-#                 discharge_match = re.search(
-#                     r"Expected\s*Date\s*of\s*Discharge\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", 
-#                     text
-#                 )
-#             if discharge_match:
-#                 extracted_data["Date of Discharge"] = discharge_match.group(1)
-
-#     except Exception as e:
-#         print(f"Error processing PDF: {str(e)}", file=sys.stderr)
-
-#     return extracted_data
-
-# if __name__ == "__main__":
-#     if len(sys.argv) != 2:
-#         print("Usage: python script.py <path_to_pdf>")
-#         sys.exit(1)
-
-#     result = extract_info_from_pdf(sys.argv[1])
-#     print(json.dumps(result, indent=4))
-
-import pdfplumber
 import re
 import json
 import sys
+from pathlib import Path
+import fitz  # PyMuPDF
+from PIL import Image
+import pytesseract
+import io
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-def suppress_warnings():
-    import warnings
-    warnings.filterwarnings("ignore", message="CropBox missing from /Page, defaulting to MediaBox")
-
-def extract_info_from_pdf(pdf_path):
-    suppress_warnings()
+class DataExtractor:
+    def __init__(self):
+        self.patterns = {
+            'AL Number': [
+                r'AL\s*Number\s*:?\s*([^\s]+)',  
+                r'AL\s*:?\s*([^\s]+)',
+                r'Authorization\s+Letter\s+Number\s*:?\s*([^\s]+)'
+            ],
+            'Approved Amount': [
+                r'Final\s+(?:Sanctioned|Approved)\s+Amount\s*:?\s*(\d+)',
+                r'Amount\s+(?:to\s+be\s+)?(?:sanctioned|approved)\s*:?\s*[Rs\.\s]*(\d+)',
+                r'guarantee\s+for\s+payment\s+of\s+Rs\s*(\d+)',
+                r'Sanctioned\s+Amount\s*:?\s*(\d+)'
+            ],
+            'Date of Admission': [
+                r'Expected\s+Date\s+of\s+Admission\s*:\s*(\d{2}-\w{3}-\d{4})',
+                r'Date\s+of\s+Admission\s*:\s*(\d{2}-\w{3}-\d{4})'
+            ],
+            'Date of Discharge': [
+                r'Expected\s+Date\s+of\s+Discharge\s*:\s*(\d{2}-\w{3}-\d{4})',
+                r'Date\s+of\s+Discharge\s*:\s*(\d{2}-\w{3}-\d{4})'
+            ],
+            'Name of the Patient': [
+                r'Patient\s*Name\s*:\s*([^\n]+?)\n([^\n]+?)(?=\nAge\s*:|$)',
+                r'Name\s+of\s+Patient\s*:\s*([^\n]+?)\n([^\n]+?)(?=\nAge\s*:|$)',
+                r'Patient\s*Name\s*:\s*([\s\S]+?)(?=\nAge\s*:|$)',
+                r'Patient\s*Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)'
+            ],
+            'Policy No': [
+                r'Policy\s+No\s*:\s*([A-Z0-9\/\-]+)',
+                r'Policy\s+Number\s*:\s*([A-Z0-9\/\-]+)'
+            ],
+            'Policy Period': [
+                r'Policy\s*period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})',
+                r'Policy\s+Period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})',
+                r'Policy\s+Term\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})'
+            ],
+            'Total Bill Amount': [
+                r'Total\s+Bill\s+Amount\s*:\s*([\d,]+\.\d{2})',
+                r'Bill\s+Amount\s*:\s*([\d,]+\.\d{2})'
+            ],
+            'UHID Number': [
+                r'UHID\s+Number\s*:\s*([A-Z0-9]+)',
+                r'UHID\s*:\s*([A-Z0-9]+)',
+                r'Hospital\s+ID\s*:\s*([A-Z0-9]+)'
+            ],
+            'Remarks': [
+                r'Authorization\s+remarks\s*:\s*(.*?)(?=\n\n|\n\*|$)',
+                r'Remarks\s*:\s*(.*?)(?=\n\n|\n\*|$)'
+            ]
+        }
     
-    extracted_data = {
-        "Name of the Patient": "null",
-        "Policy No": "null",
-        "Policy Period": "null",
-        "Date of Admission": "null",
-        "Date of Discharge": "null"
-    }
+    def extract_text_from_pdf(self, pdf_path):
+        try:
+            doc = fitz.open(pdf_path)
+            text = ""
+            
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                page_text = page.get_text()
+                
+                if not page_text.strip():
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                    img_data = pix.tobytes("png")
+                    img = Image.open(io.BytesIO(img_data))
+                    page_text = pytesseract.image_to_string(img, config='--psm 4')
+                
+                text += page_text + "\n"
+            
+            doc.close()
+            return text
+            
+        except Exception as e:
+            print(f"Error extracting text from PDF: {e}")
+            return ""
+    
+    def clean_extracted_value(self, value, field_name):
+        if not value:
+            return None
+        
+        # Handle tuple values (like Policy Period or multi-line names)
+        if isinstance(value, tuple):
+            if field_name == 'Policy Period':
+                return f"{value[0].strip()} To {value[1].strip()}"
+            elif field_name == 'Name of the Patient':
+                return ' '.join([v.strip() for v in value if v.strip()])
+            return None
+        
+        value = str(value).strip()
 
-    try:
-        with pdfplumber.open(pdf_path) as pdf:
-            page = pdf.pages[0]
-            text = page.extract_text()
+        if field_name == 'Name of the Patient':
+            value = ' '.join(value.split())
+            return value if len(value) > 2 else None
+        
+        elif field_name in ['Date of Admission', 'Date of Discharge']:
+            return value
+        
+        elif field_name in ['Approved Amount', 'Total Bill Amount']:
+            return value.replace(',', '')
+        
+        elif field_name == 'Policy Period':
+            value = re.sub(r'\s+', ' ', value)
+            return value
+        
+        elif field_name == 'Remarks':
+            value = re.sub(r'\s+', ' ', value)
+            value = re.sub(r'^(Remarks?\s*:?\s*)', '', value, flags=re.IGNORECASE)
+            return value.strip()
+        
+        elif field_name == 'AL Number':
+            return value.split('(')[0].strip() if '(' in value else value.strip()
+        
+        return value
+    
+    def extract_field(self, text, field_name):
+        patterns = self.patterns.get(field_name, [])
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
+            if matches:
+                match = matches[0]
+                return match
+        
+        return None
+        
+    def extract_all_data(self, pdf_path):        
+        text = self.extract_text_from_pdf(pdf_path)
+        
+        if not text.strip():
+            print("No text could be extracted from the PDF")
+            return None
 
-            # Improved Patient Name extraction to handle multi-line names
-            # Look for "Patient Name" followed by any text until "Age"
-            patient_match = re.search(
-                r"Patient\s*Name\s*:\s*([\s\S]+?)\s*Age\s*:", 
-                text
-            )
-            if patient_match:
-                # Clean up the name - remove extra spaces and newlines
-                name = ' '.join(patient_match.group(1).strip().split())
-                extracted_data["Name of the Patient"] = name
+        extracted_data = {}
+        for field_name in self.patterns.keys():
+            value = self.extract_field(text, field_name)
+            extracted_data[field_name] = self.clean_extracted_value(value, field_name)
+        
+        extracted_data['Letter Type'] = 'Authorization Letter'
+        
+        return extracted_data
+    
+    def process_pdf(self, pdf_path):
+        try:
+            if not Path(pdf_path).exists():
+                raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+            
+            # Extract text first and store it
+            text = self.extract_text_from_pdf(pdf_path)
+            if not text.strip():
+                return None
+                
+            data = self.extract_all_data(pdf_path)
+            
+            if data:
+                formatted_data = {
+                    "Letter Type": data.get('Letter Type'),
+                    "AL Number": data.get('AL Number'),
+                    "UHID Number": data.get('UHID Number'),
+                    "Name of the Patient": data.get('Name of the Patient'),
+                    "Policy No": data.get('Policy No'),
+                    "Policy Period": data.get('Policy Period'),
+                    "Date of Admission": data.get('Date of Admission'),
+                    "Date of Discharge": data.get('Date of Discharge'),
+                    "Remarks": data.get('Remarks'),
+                    "Total Bill Amount": data.get('Total Bill Amount'),
+                    "Approved Amount": data.get('Approved Amount'),
+                    "Hospital Address": data.get('Hospital Address')
+                }
+                
+                # Final validation for patient name with access to text
+                if not formatted_data["Name of the Patient"] or len(formatted_data["Name of the Patient"].split()) < 2:
+                    alt_match = re.search(r'Patient\s*Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)', text, re.DOTALL)
+                    if alt_match:
+                        name = alt_match.group(1).strip()
+                        # Remove any trailing Age information
+                        name = re.sub(r'\s*Age\s*:.*$', '', name)
+                        formatted_data["Name of the Patient"] = ' '.join(name.split())
+                
+                return formatted_data
+            else:
+                return None
+                
+        except Exception as e:
+            print(f"Error processing PDF: {e}")
+            return None
 
-            # Policy Number
-            policy_match = re.search(r"Policy\s*No\s*:\s*([A-Z0-9]+)", text)
-            if policy_match:
-                extracted_data["Policy No"] = policy_match.group(1).strip()
-
-            # Policy Period
-            period_match = re.search(
-                r"Policy\s*period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})", 
-                text
-            )
-            if period_match:
-                extracted_data["Policy Period"] = f"{period_match.group(1)} To {period_match.group(2)}"
-
-            # Date of Admission
-            admission_match = re.search(
-                r"Expected\s*Date\s*of\s*Admission\s*:\s*(\d{2}-\w{3}-\d{4})", 
-                text
-            )
-            if not admission_match:
-                admission_match = re.search(
-                    r"Expected\s*Date\s*of\s*Admission\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", 
-                    text
-                )
-            if admission_match:
-                extracted_data["Date of Admission"] = admission_match.group(1)
-
-            # Date of Discharge
-            discharge_match = re.search(
-                r"Expected\s*Date\s*of\s*Discharge\s*:\s*(\d{2}-\w{3}-\d{4})", 
-                text
-            )
-            if not discharge_match:
-                discharge_match = re.search(
-                    r"Expected\s*Date\s*of\s*Discharge\s*:\s*\n\s*(\d{2}-\w{3}-\d{4})", 
-                    text
-                )
-            if discharge_match:
-                extracted_data["Date of Discharge"] = discharge_match.group(1)
-
-    except Exception as e:
-        print(f"Error processing PDF: {str(e)}", file=sys.stderr)
-
-    return extracted_data
-
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python script.py <path_to_pdf>")
+def main():
+    if len(sys.argv) == 2:
+        pdf_path = sys.argv[1]
+    else:
+        pdf_path = "pdf1.pdf"
+        print(f"No command line argument provided, using default: {pdf_path}")
+    
+    extractor = DataExtractor()
+    result = extractor.process_pdf(pdf_path)
+    
+    if result:
+        print(json.dumps(result, indent=4, ensure_ascii=False))
+    else:
+        print("Failed to extract data from PDF")
         sys.exit(1)
 
-    result = extract_info_from_pdf(sys.argv[1])
-    print(json.dumps(result, indent=4))
+if __name__ == "__main__":
+    main()
