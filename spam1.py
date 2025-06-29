@@ -141,8 +141,8 @@ import sys
 from pathlib import Path
 import fitz  # PyMuPDF
 from PIL import Image
-import pytesseract
 import io
+import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 class DataExtractor:
@@ -197,6 +197,41 @@ class DataExtractor:
                 r'Remarks\s*:\s*(.*?)(?=\n\n|\n\*|$)'
             ]
         }
+    
+    def extract_hospital_address(self, page):
+        """Extract hospital address from a PyMuPDF page object"""
+        words = page.get_text("words")
+        address_lines = []
+        start_y = None
+        end_y = None
+
+        # Look for the hospital name which appears just before the address
+        for i, w in enumerate(words):
+            if "HOSPITAL" in w[4].upper():  # w[4] is the text content
+                start_y = w[3]  # w[3] is the bottom y-coordinate
+                break
+        
+        if start_y is None:
+            return None
+
+        # Find the end of the address (before the city name repeats)
+        for w in words[i+1:]:
+            if w[4].strip().isdigit() and len(w[4].strip()) == 6:  # PIN code detection
+                end_y = w[3] + 20  # Add some padding below the PIN code
+                break
+        if end_y is None:
+            end_y = start_y + 150  # Default height if no PIN code found
+
+        lines = {}
+        for w in words:
+            # w[0] is x0, w[3] is bottom y-coordinate (top is w[1])
+            if start_y < w[1] < end_y and w[0] < 250:  # Check x0 < 250 and y within range
+                y = round(w[1], 1)  # Use top y-coordinate for grouping
+                lines.setdefault(y, []).append(w[4])
+
+        sorted_lines = [lines[y] for y in sorted(lines)]
+        full_lines = [' '.join(line) for line in sorted_lines]
+        return ', '.join(full_lines).replace(',,', ',')
     
     def extract_text_from_pdf(self, pdf_path):
         try:
@@ -302,6 +337,16 @@ class DataExtractor:
         for field_name in self.patterns.keys():
             value = self.extract_field(text, field_name)
             extracted_data[field_name] = self.clean_extracted_value(value, field_name)
+        
+        # Extract hospital address using PyMuPDF
+        try:
+            doc = fitz.open(pdf_path)
+            page = doc.load_page(0)  # First page
+            extracted_data['Hospital Address'] = self.extract_hospital_address(page)
+            doc.close()
+        except Exception as e:
+            print(f"Error extracting hospital address: {e}")
+            extracted_data['Hospital Address'] = None
         
         extracted_data['Letter Type'] = 'Authorization Letter'
         
