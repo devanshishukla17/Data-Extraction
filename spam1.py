@@ -168,8 +168,8 @@ class DataExtractor:
             'Name of the Patient': [
                 r'Patient\s*Name\s*:\s*([^\n]+?)\n([^\n]+?)(?=\nAge\s*:|$)',
                 r'Name\s+of\s+Patient\s*:\s*([^\n]+?)\n([^\n]+?)(?=\nAge\s*:|$)',
-                r'Patient\s*Name\s*:\s*([\s\S]+?)(?=\nAge\s*:|$)',
-                r'Patient\s*Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)'
+                r'Patient\s*Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)',
+                r'Name\s+of\s+Patient\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)'
             ],
             'Policy No': [
                 r'Policy\s+No\s*:\s*([A-Z0-9\/\-]+)',
@@ -228,12 +228,18 @@ class DataExtractor:
             if field_name == 'Policy Period':
                 return f"{value[0].strip()} To {value[1].strip()}"
             elif field_name == 'Name of the Patient':
-                return ' '.join([v.strip() for v in value if v.strip()])
+                # Combine both lines of the name and clean
+                combined = ' '.join([v.strip() for v in value if v.strip()])
+                # Remove any trailing Age information
+                combined = re.sub(r'\s*Age\s*:.*$', '', combined)
+                return combined.strip()
             return None
         
         value = str(value).strip()
 
         if field_name == 'Name of the Patient':
+            # Remove any Age information or other trailing details
+            value = re.sub(r'\s*Age\s*:.*$', '', value)
             value = ' '.join(value.split())
             return value if len(value) > 2 else None
         
@@ -314,12 +320,19 @@ class DataExtractor:
                 
                 # Final validation for patient name with access to text
                 if not formatted_data["Name of the Patient"] or len(formatted_data["Name of the Patient"].split()) < 2:
-                    alt_match = re.search(r'Patient\s*Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)', text, re.DOTALL)
+                    # Try multi-line pattern first
+                    alt_match = re.search(r'Patient\s*Name\s*:\s*([^\n]+?)\n([^\n]+?)(?=\nAge\s*:|$)', text, re.DOTALL)
                     if alt_match:
-                        name = alt_match.group(1).strip()
-                        # Remove any trailing Age information
+                        name = ' '.join([alt_match.group(1).strip(), alt_match.group(2).strip()])
                         name = re.sub(r'\s*Age\s*:.*$', '', name)
-                        formatted_data["Name of the Patient"] = ' '.join(name.split())
+                        formatted_data["Name of the Patient"] = name.strip()
+                    else:
+                        # Fall back to single line pattern
+                        alt_match = re.search(r'Patient\s*Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)', text, re.DOTALL)
+                        if alt_match:
+                            name = alt_match.group(1).strip()
+                            name = re.sub(r'\s*Age\s*:.*$', '', name)
+                            formatted_data["Name of the Patient"] = name.strip()
                 
                 return formatted_data
             else:
