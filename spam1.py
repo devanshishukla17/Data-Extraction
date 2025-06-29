@@ -1,138 +1,3 @@
-# import pdfplumber
-# import re
-# import json
-# import sys
-
-# def suppress_warnings():
-#     # Suppress the CropBox warnings
-#     import warnings
-#     warnings.filterwarnings("ignore", message="CropBox missing from /Page, defaulting to MediaBox")
-
-# def extract_hospital_address(page):
-#     words = page.extract_words()
-#     address_lines = []
-#     start_y = None
-#     end_y = None
-
-#     # Look for the hospital name which appears just before the address
-#     for i, w in enumerate(words):
-#         if "HOSPITAL" in w['text'].upper():
-#             start_y = w['top']
-#             break
-    
-#     if start_y is None:
-#         return "null"
-
-#     # Find the end of the address (before the city name repeats)
-#     for w in words[i+1:]:
-#         if w['text'].strip().isdigit() and len(w['text'].strip()) == 6:  # PIN code detection
-#             end_y = w['top'] + 20
-#             break
-#     if end_y is None:
-#         end_y = start_y + 150
-
-#     lines = {}
-#     for w in words:
-#         if start_y < w['top'] < end_y and w['x0'] < 250:
-#             y = round(w['top'], 1)
-#             lines.setdefault(y, []).append(w['text'])
-
-#     sorted_lines = [lines[y] for y in sorted(lines)]
-#     full_lines = [' '.join(line) for line in sorted_lines]
-#     return ', '.join(full_lines).replace(',,', ',')
-
-# def extract_info_from_pdf(pdf_path):
-#     suppress_warnings()
-    
-#     extracted_data = {
-#         "AL Number": "null",
-#         "Approved Amount": "null",
-#         "Date & Time": "null",
-#         "Date of Admission": "null",
-#         "Date of Discharge": "null",
-#         "Hospital Address": "null",
-#         "Letter Type": "Approval",
-#         "Name of the Patient": "null",
-#         "Policy No": "null",
-#         "Policy Period": "null",
-#         "Remarks": "null",
-#         "Total Bill Amount": "null",
-#         "UHID Number": "null"
-#     }
-     
-#     try:
-#         with pdfplumber.open(pdf_path) as pdf:
-#             page = pdf.pages[0]
-#             text = page.extract_text()
-
-#             # Extract Hospital Address
-#             extracted_data["Hospital Address"] = extract_hospital_address(page)
-            
-#             # Extract AL Number (Claim Number)
-#             al_match = re.search(r"Claim Number AL:\s*([^\s\n]+)", text)
-#             if al_match:
-#                 extracted_data["AL Number"] = al_match.group(1).strip('()')
-            
-#             # Extract Patient Name
-#             patient_match = re.search(r"Patient Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)", text)
-#             if patient_match:
-#                 extracted_data["Name of the Patient"] = patient_match.match.group(1).strip()
-            
-#             # Extract Policy Number
-#             policy_match = re.search(r"Policy No\s*:\s*([A-Za-z0-9\/-]+)", text)
-#             if policy_match:
-#                 extracted_data["Policy No"] = policy_match.group(1).strip()
-            
-#             # Extract Policy Period
-#             period_match = re.search(r"Policy period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})", text, re.IGNORECASE)
-#             if period_match:
-#                 extracted_data["Policy Period"] = f"{period_match.group(1).strip()} To {period_match.group(2).strip()}"
-            
-#             # Extract Dates
-#             admission_match = re.search(r"Expected Date of Admission\s*:\s*(\d{2}-\w{3}-\d{4})", text)
-#             if admission_match:
-#                 extracted_data["Date of Admission"] = admission_match.group(1).strip()
-            
-#             discharge_match = re.search(r"Expected Date of Discharge\s*:\s*(\d{2}-\w{3}-\d{4})", text)
-#             if discharge_match:
-#                 extracted_data["Date of Discharge"] = discharge_match.group(1).strip()
-            
-#             # Extract Authorization Details
-#             auth_match = re.search(r"Authorization Details:\s*(\d{2}/\w{3}/\d{4}\s+\d{1,2}:\d{2}:\d{2})\s+([^\s]+)\s+([\d,]+\.\d{2})", text)
-#             if auth_match:
-#                 extracted_data["Date & Time"] = auth_match.group(1).strip()
-#                 extracted_data["Approved Amount"] = auth_match.group(3).strip()
-            
-#             # Extract Remarks
-#             remarks_match = re.search(r"Authorization remarks\s*:\s*(.*?)(?:\n\n|\n\*|$)", text, re.DOTALL | re.IGNORECASE)
-#             if remarks_match:
-#                 extracted_data["Remarks"] = remarks_match.group(1).strip()
-            
-#             # Extract Total Bill Amount
-#             bill_match = re.search(r"Total Bill Amount\s*([\d,]+\.\d{2})", text)
-#             if bill_match:
-#                 extracted_data["Total Bill Amount"] = bill_match.group(1).strip()
-            
-#             # Extract UHID Number (assuming this is the Rohini ID)
-#             uhid_match = re.search(r"Rohini ID\s*:\s*([^\s\n]+)", text)
-#             if uhid_match:
-#                 extracted_data["UHID Number"] = uhid_match.group(1).strip()
-
-#     except Exception as e:
-#         print(f"Error processing PDF: {str(e)}", file=sys.stderr)
-
-#     return extracted_data
-
-# if __name__ == "__main__":
-#     if len(sys.argv) != 2:
-#         print("Usage: python script.py <path_to_pdf>")
-#         sys.exit(1)
-
-#     result = extract_info_from_pdf(sys.argv[1])
-#     print(json.dumps(result, indent=4))
-
-#---------------------------------------------------------------------------------------------------------------------
-
 # Add date and time field as well.
 
 import re
@@ -199,34 +64,29 @@ class DataExtractor:
         }
     
     def extract_hospital_address(self, page):
-        """Extract hospital address from a PyMuPDF page object"""
         words = page.get_text("words")
         address_lines = []
         start_y = None
         end_y = None
 
-        # Look for the hospital name which appears just before the address
         for i, w in enumerate(words):
-            if "HOSPITAL" in w[4].upper():  # w[4] is the text content
-                start_y = w[3]  # w[3] is the bottom y-coordinate
+            if "HOSPITAL" in w[4].upper():  
+                start_y = w[3] 
                 break
         
         if start_y is None:
             return None
-
-        # Find the end of the address (before the city name repeats)
         for w in words[i+1:]:
-            if w[4].strip().isdigit() and len(w[4].strip()) == 6:  # PIN code detection
-                end_y = w[3] + 20  # Add some padding below the PIN code
+            if w[4].strip().isdigit() and len(w[4].strip()) == 6:  
+                end_y = w[3] + 20  
                 break
         if end_y is None:
-            end_y = start_y + 150  # Default height if no PIN code found
+            end_y = start_y + 150  
 
         lines = {}
         for w in words:
-            # w[0] is x0, w[3] is bottom y-coordinate (top is w[1])
-            if start_y < w[1] < end_y and w[0] < 250:  # Check x0 < 250 and y within range
-                y = round(w[1], 1)  # Use top y-coordinate for grouping
+            if start_y < w[1] < end_y and w[0] < 250:  
+                y = round(w[1], 1)  
                 lines.setdefault(y, []).append(w[4])
 
         sorted_lines = [lines[y] for y in sorted(lines)]
@@ -260,15 +120,12 @@ class DataExtractor:
     def clean_extracted_value(self, value, field_name):
         if not value:
             return None
-        
-        # Handle tuple values (like Policy Period or multi-line names)
+
         if isinstance(value, tuple):
             if field_name == 'Policy Period':
                 return f"{value[0].strip()} To {value[1].strip()}"
             elif field_name == 'Name of the Patient':
-                # Combine both lines of the name and clean
                 combined = ' '.join([v.strip() for v in value if v.strip()])
-                # Remove any trailing Age information
                 combined = re.sub(r'\s*Age\s*:.*$', '', combined)
                 return combined.strip()
             return None
@@ -276,7 +133,6 @@ class DataExtractor:
         value = str(value).strip()
 
         if field_name == 'Name of the Patient':
-            # Remove any Age information or other trailing details
             value = re.sub(r'\s*Age\s*:.*$', '', value)
             value = ' '.join(value.split())
             return value if len(value) > 2 else None
@@ -302,7 +158,20 @@ class DataExtractor:
         return value
     
     def extract_field(self, text, field_name):
-        # Special handling for Non-Package Case section
+        if field_name == 'Remarks':
+            remarks_match = re.search(
+                r'Authorization\s+remarks\s*:\s*(.*?)(?=\s*Hospital\s+Agreed\s+Tariff\s*:|$)', 
+                text, 
+                re.DOTALL | re.IGNORECASE
+            )
+            if remarks_match:
+                return remarks_match.group(1).strip()
+            for pattern in self.patterns.get('Remarks', []):
+                matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
+                if matches:
+                    return matches[0]
+            return None
+
         if field_name in ['Total Bill Amount', 'Approved Amount']:
             non_package_section = re.search(r'II\.\s*Non\s*Package\s*Case.*?Authorization\s*Summary:(.*?)(?:\n\n|\Z)', text, re.DOTALL | re.IGNORECASE)
             if non_package_section:
@@ -315,15 +184,14 @@ class DataExtractor:
                     approved_match = re.search(r'Total\s+Authorized\s+Amount\s*[:\|]?\s*([\d,]+\.\d{2})', section_text)
                     if approved_match:
                         return approved_match.group(1)
-        
-        # Fall back to normal patterns if not found in Non-Package Case section
+
         patterns = self.patterns.get(field_name, [])
         for pattern in patterns:
             matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
             if matches:
                 match = matches[0]
                 return match
-        
+    
         return None
         
     def extract_all_data(self, pdf_path):        
@@ -338,17 +206,16 @@ class DataExtractor:
             value = self.extract_field(text, field_name)
             extracted_data[field_name] = self.clean_extracted_value(value, field_name)
         
-        # Extract hospital address using PyMuPDF
         try:
             doc = fitz.open(pdf_path)
-            page = doc.load_page(0)  # First page
+            page = doc.load_page(0) 
             extracted_data['Hospital Address'] = self.extract_hospital_address(page)
             doc.close()
         except Exception as e:
             print(f"Error extracting hospital address: {e}")
             extracted_data['Hospital Address'] = None
         
-        extracted_data['Letter Type'] = 'Authorization Letter'
+        extracted_data['Letter Type'] = 'Approval Letter'
         
         return extracted_data
     
@@ -356,8 +223,7 @@ class DataExtractor:
         try:
             if not Path(pdf_path).exists():
                 raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-            
-            # Extract text first and store it
+    
             text = self.extract_text_from_pdf(pdf_path)
             if not text.strip():
                 return None
@@ -380,16 +246,13 @@ class DataExtractor:
                     "Hospital Address": data.get('Hospital Address')
                 }
                 
-                # Final validation for patient name with access to text
                 if not formatted_data["Name of the Patient"] or len(formatted_data["Name of the Patient"].split()) < 2:
-                    # Try multi-line pattern first
                     alt_match = re.search(r'Patient\s*Name\s*:\s*([^\n]+?)\n([^\n]+?)(?=\nAge\s*:|$)', text, re.DOTALL)
                     if alt_match:
                         name = ' '.join([alt_match.group(1).strip(), alt_match.group(2).strip()])
                         name = re.sub(r'\s*Age\s*:.*$', '', name)
                         formatted_data["Name of the Patient"] = name.strip()
                     else:
-                        # Fall back to single line pattern
                         alt_match = re.search(r'Patient\s*Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)', text, re.DOTALL)
                         if alt_match:
                             name = alt_match.group(1).strip()
