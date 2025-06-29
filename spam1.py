@@ -133,6 +133,8 @@
 
 #---------------------------------------------------------------------------------------------------------------------
 
+# Add date and time field as well.
+
 import re
 import json
 import sys
@@ -152,9 +154,9 @@ class DataExtractor:
                 r'Authorization\s+Letter\s+Number\s*:?\s*([^\s]+)'
             ],
             'Approved Amount': [
+                r'Total\s+Authorized\s+Amount\s*:\s*([\d,]+\.\d{2})',
+                r'Total\s+Authorized\s+Amount\s*\|\s*([\d,]+\.\d{2})',
                 r'Final\s+(?:Sanctioned|Approved)\s+Amount\s*:?\s*(\d+)',
-                r'Amount\s+(?:to\s+be\s+)?(?:sanctioned|approved)\s*:?\s*[Rs\.\s]*(\d+)',
-                r'guarantee\s+for\s+payment\s+of\s+Rs\s*(\d+)',
                 r'Sanctioned\s+Amount\s*:?\s*(\d+)'
             ],
             'Date of Admission': [
@@ -182,6 +184,7 @@ class DataExtractor:
             ],
             'Total Bill Amount': [
                 r'Total\s+Bill\s+Amount\s*:\s*([\d,]+\.\d{2})',
+                r'Total\s+Bill\s+Amount\s*\|\s*([\d,]+\.\d{2})',
                 r'Bill\s+Amount\s*:\s*([\d,]+\.\d{2})'
             ],
             'UHID Number': [
@@ -264,8 +267,22 @@ class DataExtractor:
         return value
     
     def extract_field(self, text, field_name):
-        patterns = self.patterns.get(field_name, [])
+        # Special handling for Non-Package Case section
+        if field_name in ['Total Bill Amount', 'Approved Amount']:
+            non_package_section = re.search(r'II\.\s*Non\s*Package\s*Case.*?Authorization\s*Summary:(.*?)(?:\n\n|\Z)', text, re.DOTALL | re.IGNORECASE)
+            if non_package_section:
+                section_text = non_package_section.group(1)
+                if field_name == 'Total Bill Amount':
+                    bill_match = re.search(r'Total\s+Bill\s+Amount\s*[:\|]?\s*([\d,]+\.\d{2})', section_text)
+                    if bill_match:
+                        return bill_match.group(1)
+                elif field_name == 'Approved Amount':
+                    approved_match = re.search(r'Total\s+Authorized\s+Amount\s*[:\|]?\s*([\d,]+\.\d{2})', section_text)
+                    if approved_match:
+                        return approved_match.group(1)
         
+        # Fall back to normal patterns if not found in Non-Package Case section
+        patterns = self.patterns.get(field_name, [])
         for pattern in patterns:
             matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
             if matches:
