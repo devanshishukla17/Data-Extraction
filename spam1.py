@@ -185,9 +185,9 @@ class DataExtractor:
                 r'Bill\s+Amount\s*:\s*([\d,]+\.\d{2})'
             ],
             'UHID Number': [
-                r'UHID\s+Number\s*:\s*([A-Z0-9]+)',
-                r'UHID\s*:\s*([A-Z0-9]+)',
-                r'Hospital\s+ID\s*:\s*([A-Z0-9]+)'
+                r'Insurer\s+Id\s+of\s+the\s+Patient\s*:\s*([A-Z0-9]+)',
+                r'Insurer\s+ID\s*:\s*([A-Z0-9]+)',
+                r'Patient\s+ID\s*:\s*([A-Z0-9]+)'
             ],
             'Remarks': [
                 r'Authorization\s+remarks\s*:\s*(.*?)(?=\n\n|\n\*|$)',
