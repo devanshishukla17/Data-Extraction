@@ -140,6 +140,32 @@ class DenialLetterExtractor:
         except Exception as e:
             print(f"Error extracting table values: {e}", file=sys.stderr)
             return None, None
+        
+    def extract_reason(self, text):
+        try:
+            # Find the section between the two markers
+            reason_match = re.search(
+                r'conditions of the policy stated below:(.*?)Your request for a cashless facility',
+                text,
+                re.DOTALL | re.IGNORECASE
+            )
+        
+            if not reason_match:
+                return None
+            
+            reason_text = reason_match.group(1).strip()
+        
+        # Clean up the text - remove extra whitespace and newlines
+            reason_text = ' '.join(reason_text.split())
+        
+        # Remove any leading/trailing punctuation
+            reason_text = reason_text.strip('.,;:- ')
+        
+            return reason_text if reason_text else None
+        
+        except Exception as e:
+            print(f"Error extracting reason: {e}", file=sys.stderr)
+            return None
 
     def process_denial_letter(self, pdf_path):
         text = self.extract_text_from_pdf(pdf_path)
@@ -150,6 +176,7 @@ class DenialLetterExtractor:
         al_number = self.extract_al_number(text)
         patient_name = self.extract_patient_name(text)
         member_id, policy_number = self.extract_table_values(text)
+        reason = self.extract_reason(text) 
 
         return {
             "AL Number": al_number,
@@ -157,7 +184,7 @@ class DenialLetterExtractor:
             "Name of the Patient": patient_name,
             "Policy Number": policy_number,
             "Hospital Address": hospital_address,
-            "Reason": None 
+            "Reason": reason
         }
 
 def main():
