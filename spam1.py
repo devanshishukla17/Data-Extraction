@@ -12,7 +12,6 @@ class DenialLetterExtractor:
         pass
 
     def extract_text_from_pdf(self, pdf_path):
-        """Extract text from PDF using PyMuPDF with fallback to OCR if needed"""
         try:
             doc = fitz.open(pdf_path)
             text = ""
@@ -21,14 +20,12 @@ class DenialLetterExtractor:
                 page_text = page.get_text()
                 
                 if not page_text.strip():
-                    # Fallback to OCR if no text found
                     pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                     img_data = pix.tobytes("png")
                     img = Image.open(io.BytesIO(img_data))
                     page_text = pytesseract.image_to_string(img, config='--psm 4')
                 
                 text += page_text + "\n"
-            
             doc.close()
             return text
             
@@ -37,10 +34,9 @@ class DenialLetterExtractor:
             return ""
 
     def extract_address_layout(self, pdf_path):
-        """Extract address using spatial layout analysis"""
         try:
             doc = fitz.open(pdf_path)
-            page = doc[0]  # First page
+            page = doc[0]  
             words = page.get_text("words")
             
             address_lines = []
@@ -50,23 +46,21 @@ class DenialLetterExtractor:
 
             # Find "To,"
             for w in words:
-                if w[4].strip() == 'To,':  # w[4] is the text in PyMuPDF
-                    start_y = w[3]  # w[3] is bottom coordinate
+                if w[4].strip() == 'To,': 
+                    start_y = w[3]  
                     break
             if start_y is None:
                 return "null"
 
-            # Find end marker (Subject or other indicators)
             for w in words:
                 if w[4].strip().startswith('Subject') and w[3] > start_y:
-                    end_y = w[1]  # w[1] is top coordinate
+                    end_y = w[1]  
                     break
             if end_y is None:
                 end_y = start_y + 150
 
             lines = {}
             for w in words:
-                # Stop processing if we hit certain markers
                 if 'Inlias' in w[4] or ('ID' in w[4] and ':' in w[4]):
                     stop_processing = True
                     continue
@@ -74,19 +68,15 @@ class DenialLetterExtractor:
                 if stop_processing:
                     continue
                     
-                if start_y < w[1] < end_y and w[0] < 250:  # w[0] is x0, w[1] is y0
+                if start_y < w[1] < end_y and w[0] < 250:  
                     y = round(w[1], 1)
                     lines.setdefault(y, []).append(w[4])
 
             sorted_lines = [lines[y] for y in sorted(lines)]
             full_lines = [' '.join(line) for line in sorted_lines]
             
-            # Join and clean the address
             address = ', '.join(full_lines)
-            
-            # Final cleanup to remove any trailing commas or spaces
             address = address.rstrip(', ')
-            
             return address if address else "null"
             
         except Exception as e:
@@ -97,7 +87,6 @@ class DenialLetterExtractor:
                 doc.close()
 
     def extract_al_number(self, text):
-        """Extract AL Number from the line containing 'AL No :'"""
         try:
             match = re.search(r'AL\s*No\s*:\s*([^\s]+)', text)
             return match.group(1) if match else None
@@ -106,7 +95,6 @@ class DenialLetterExtractor:
             return None
 
     def extract_patient_name(self, text):
-        """Extract patient name after 'Subject :- Denial of Pre-Auth for'"""
         try:
             match = re.search(r'Subject\s*:-\s*Denial\s*of\s*Pre-Auth\s*for\s*([^\n]+)', text)
             return match.group(1).strip() if match else None
@@ -115,31 +103,49 @@ class DenialLetterExtractor:
             return None
 
     def extract_table_values(self, text):
-        """Extract values from the table (Member ID and Policy Number)"""
         try:
-            # Find the table section
-            table_section = re.search(r'Member ID\s*\|.*?Policy Number\s*\|.*?\n(.*?)\n', text, re.DOTALL)
-            if not table_section:
-                return None, None
-            
-            # Extract all values from the table row
-            values = re.findall(r'\|\s*([^\|]+)\s*\|', table_section.group(0))
-            if len(values) >= 4:
-                member_id = values[0].strip()
-                policy_number = values[3].strip()
-                return member_id, policy_number
-            return None, None
+            clean_text = ' '.join(text.split())
+            direct_match = re.search(
+                r'Member ID[:\s]+(\d+).*?Policy Number[:\s]+(\d+)',
+                clean_text,
+                re.IGNORECASE
+            )
+            if direct_match:
+                return direct_match.group(1), direct_match.group(2)
+            table_match = re.search(
+                r'Member ID\s*\|\s*(\d+).*?Policy Number\s*\|\s*(\d+)',
+                clean_text,
+                re.IGNORECASE
+            )
+            if table_match:
+                return table_match.group(1), table_match.group(2)
+        
+            lines = text.split('\n')
+            member_id = None
+            policy_number = None
+        
+            for line in lines:
+                if not member_id and ('Member ID' in line or 'UHID' in line):
+                    member_match = re.search(r'[:\|]\s*(\d+)', line)
+                    if member_match:
+                        member_id = member_match.group(1)
+
+                if not policy_number and ('Policy Number' in line or 'Policy No' in line):
+                    policy_match = re.search(r'[:\|]\s*(\d+)', line)
+                    if policy_match:
+                        policy_number = policy_match.group(1)
+        
+            return member_id, policy_number
+        
         except Exception as e:
             print(f"Error extracting table values: {e}", file=sys.stderr)
             return None, None
 
     def process_denial_letter(self, pdf_path):
-        """Process the denial letter PDF and extract all required fields"""
         text = self.extract_text_from_pdf(pdf_path)
         if not text.strip():
             return None
 
-        # Extract all fields
         hospital_address = self.extract_address_layout(pdf_path)
         al_number = self.extract_al_number(text)
         patient_name = self.extract_patient_name(text)
@@ -151,7 +157,7 @@ class DenialLetterExtractor:
             "Name of the Patient": patient_name,
             "Policy Number": policy_number,
             "Hospital Address": hospital_address,
-            "Reason": None  # To be implemented later
+            "Reason": None 
         }
 
 def main():
@@ -166,6 +172,7 @@ def main():
         print(json.dumps(result, indent=4, ensure_ascii=False))
     else:
         print("Failed to extract data from denial letter", file=sys.stderr)
+    
         sys.exit(1)
 
 if __name__ == "__main__":
