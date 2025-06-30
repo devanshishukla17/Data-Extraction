@@ -1,5 +1,3 @@
-# Add date and time field as well.
-
 import re
 import json
 import sys
@@ -8,101 +6,22 @@ import fitz  # PyMuPDF
 from PIL import Image
 import io
 import pytesseract
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-class DataExtractor:
+class DenialLetterExtractor:
     def __init__(self):
-        self.patterns = {
-            'AL Number': [
-                r'AL\s*Number\s*:?\s*([^\s]+)',  
-                r'AL\s*:?\s*([^\s]+)',
-                r'Authorization\s+Letter\s+Number\s*:?\s*([^\s]+)'
-            ],
-            'Approved Amount': [
-                r'Total\s+Authorized\s+Amount\s*:\s*([\d,]+\.\d{2})',
-                r'Total\s+Authorized\s+Amount\s*\|\s*([\d,]+\.\d{2})',
-                r'Final\s+(?:Sanctioned|Approved)\s+Amount\s*:?\s*(\d+)',
-                r'Sanctioned\s+Amount\s*:?\s*(\d+)'
-            ],
-            'Date of Admission': [
-                r'Expected\s+Date\s+of\s+Admission\s*:\s*(\d{2}-\w{3}-\d{4})',
-                r'Date\s+of\s+Admission\s*:\s*(\d{2}-\w{3}-\d{4})'
-            ],
-            'Date of Discharge': [
-                r'Expected\s+Date\s+of\s+Discharge\s*:\s*(\d{2}-\w{3}-\d{4})',
-                r'Date\s+of\s+Discharge\s*:\s*(\d{2}-\w{3}-\d{4})'
-            ],
-            'Name of the Patient': [
-                r'Patient\s*Name\s*:\s*([^\n]+?)\n([^\n]+?)(?=\nAge\s*:|$)',
-                r'Name\s+of\s+Patient\s*:\s*([^\n]+?)\n([^\n]+?)(?=\nAge\s*:|$)',
-                r'Patient\s*Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)',
-                r'Name\s+of\s+Patient\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)'
-            ],
-            'Policy No': [
-                r'Policy\s+No\s*:\s*([A-Z0-9\/\-]+)',
-                r'Policy\s+Number\s*:\s*([A-Z0-9\/\-]+)'
-            ],
-            'Policy Period': [
-                r'Policy\s*period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})',
-                r'Policy\s+Period\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})',
-                r'Policy\s+Term\s*:\s*(\d{2}-\d{2}-\d{4})\s*to\s*(\d{2}-\d{2}-\d{4})'
-            ],
-            'Total Bill Amount': [
-                r'Total\s+Bill\s+Amount\s*:\s*([\d,]+\.\d{2})',
-                r'Total\s+Bill\s+Amount\s*\|\s*([\d,]+\.\d{2})',
-                r'Bill\s+Amount\s*:\s*([\d,]+\.\d{2})'
-            ],
-            'UHID Number': [
-                r'Insurer\s+Id\s+of\s+the\s+Patient\s*:\s*([A-Z0-9]+)',
-                r'Insurer\s+ID\s*:\s*([A-Z0-9]+)',
-                r'Patient\s+ID\s*:\s*([A-Z0-9]+)'
-            ],
-            'Remarks': [
-                r'Authorization\s+remarks\s*:\s*(.*?)(?=\n\n|\n\*|$)',
-                r'Remarks\s*:\s*(.*?)(?=\n\n|\n\*|$)'
-            ]
-        }
-    
-    def extract_hospital_address(self, page):
-        words = page.get_text("words")
-        address_lines = []
-        start_y = None
-        end_y = None
+        pass
 
-        for i, w in enumerate(words):
-            if "HOSPITAL" in w[4].upper():  
-                start_y = w[3] 
-                break
-        
-        if start_y is None:
-            return None
-        for w in words[i+1:]:
-            if w[4].strip().isdigit() and len(w[4].strip()) == 6:  
-                end_y = w[3] + 20  
-                break
-        if end_y is None:
-            end_y = start_y + 150  
-
-        lines = {}
-        for w in words:
-            if start_y < w[1] < end_y and w[0] < 250:  
-                y = round(w[1], 1)  
-                lines.setdefault(y, []).append(w[4])
-
-        sorted_lines = [lines[y] for y in sorted(lines)]
-        full_lines = [' '.join(line) for line in sorted_lines]
-        return ', '.join(full_lines).replace(',,', ',')
-    
     def extract_text_from_pdf(self, pdf_path):
+        """Extract text from PDF using PyMuPDF with fallback to OCR if needed"""
         try:
             doc = fitz.open(pdf_path)
             text = ""
             
-            for page_num in range(len(doc)):
-                page = doc.load_page(page_num)
+            for page in doc:
                 page_text = page.get_text()
                 
                 if not page_text.strip():
+                    # Fallback to OCR if no text found
                     pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                     img_data = pix.tobytes("png")
                     img = Image.open(io.BytesIO(img_data))
@@ -114,174 +33,141 @@ class DataExtractor:
             return text
             
         except Exception as e:
-            print(f"Error extracting text from PDF: {e}")
+            print(f"Error extracting text from PDF: {e}", file=sys.stderr)
             return ""
-    
-    def clean_extracted_value(self, value, field_name):
-        if not value:
-            return None
 
-        if isinstance(value, tuple):
-            if field_name == 'Policy Period':
-                return f"{value[0].strip()} To {value[1].strip()}"
-            elif field_name == 'Name of the Patient':
-                combined = ' '.join([v.strip() for v in value if v.strip()])
-                combined = re.sub(r'\s*Age\s*:.*$', '', combined)
-                return combined.strip()
-            return None
-        
-        value = str(value).strip()
-
-        if field_name == 'Name of the Patient':
-            value = re.sub(r'\s*Age\s*:.*$', '', value)
-            value = ' '.join(value.split())
-            return value if len(value) > 2 else None
-        
-        elif field_name in ['Date of Admission', 'Date of Discharge']:
-            return value
-        
-        elif field_name in ['Approved Amount', 'Total Bill Amount']:
-            return value.replace(',', '')
-        
-        elif field_name == 'Policy Period':
-            value = re.sub(r'\s+', ' ', value)
-            return value
-        
-        elif field_name == 'Remarks':
-            value = re.sub(r'\s+', ' ', value)
-            value = re.sub(r'^(Remarks?\s*:?\s*)', '', value, flags=re.IGNORECASE)
-            return value.strip()
-        
-        elif field_name == 'AL Number':
-            return value.split('(')[0].strip() if '(' in value else value.strip()
-        
-        return value
-    
-    def extract_field(self, text, field_name):
-        if field_name == 'Remarks':
-            remarks_match = re.search(
-                r'Authorization\s+remarks\s*:\s*(.*?)(?=\s*Hospital\s+Agreed\s+Tariff\s*:|$)', 
-                text, 
-                re.DOTALL | re.IGNORECASE
-            )
-            if remarks_match:
-                return remarks_match.group(1).strip()
-            for pattern in self.patterns.get('Remarks', []):
-                matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
-                if matches:
-                    return matches[0]
-            return None
-
-        if field_name in ['Total Bill Amount', 'Approved Amount']:
-            non_package_section = re.search(r'II\.\s*Non\s*Package\s*Case.*?Authorization\s*Summary:(.*?)(?:\n\n|\Z)', text, re.DOTALL | re.IGNORECASE)
-            if non_package_section:
-                section_text = non_package_section.group(1)
-                if field_name == 'Total Bill Amount':
-                    bill_match = re.search(r'Total\s+Bill\s+Amount\s*[:\|]?\s*([\d,]+\.\d{2})', section_text)
-                    if bill_match:
-                        return bill_match.group(1)
-                elif field_name == 'Approved Amount':
-                    approved_match = re.search(r'Total\s+Authorized\s+Amount\s*[:\|]?\s*([\d,]+\.\d{2})', section_text)
-                    if approved_match:
-                        return approved_match.group(1)
-
-        patterns = self.patterns.get(field_name, [])
-        for pattern in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
-            if matches:
-                match = matches[0]
-                return match
-    
-        return None
-        
-    def extract_all_data(self, pdf_path):        
-        text = self.extract_text_from_pdf(pdf_path)
-        
-        if not text.strip():
-            print("No text could be extracted from the PDF")
-            return None
-
-        extracted_data = {}
-        for field_name in self.patterns.keys():
-            value = self.extract_field(text, field_name)
-            extracted_data[field_name] = self.clean_extracted_value(value, field_name)
-        
+    def extract_address_layout(self, pdf_path):
+        """Extract address using spatial layout analysis"""
         try:
             doc = fitz.open(pdf_path)
-            page = doc.load_page(0) 
-            extracted_data['Hospital Address'] = self.extract_hospital_address(page)
-            doc.close()
-        except Exception as e:
-            print(f"Error extracting hospital address: {e}")
-            extracted_data['Hospital Address'] = None
-        
-        extracted_data['Letter Type'] = 'Approval Letter'
-        
-        return extracted_data
-    
-    def process_pdf(self, pdf_path):
-        try:
-            if not Path(pdf_path).exists():
-                raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-    
-            text = self.extract_text_from_pdf(pdf_path)
-            if not text.strip():
-                return None
-                
-            data = self.extract_all_data(pdf_path)
+            page = doc[0]  # First page
+            words = page.get_text("words")
             
-            if data:
-                formatted_data = {
-                    "Letter Type": data.get('Letter Type'),
-                    "AL Number": data.get('AL Number'),
-                    "UHID Number": data.get('UHID Number'),
-                    "Name of the Patient": data.get('Name of the Patient'),
-                    "Policy No": data.get('Policy No'),
-                    "Policy Period": data.get('Policy Period'),
-                    "Date of Admission": data.get('Date of Admission'),
-                    "Date of Discharge": data.get('Date of Discharge'),
-                    "Remarks": data.get('Remarks'),
-                    "Total Bill Amount": data.get('Total Bill Amount'),
-                    "Approved Amount": data.get('Approved Amount'),
-                    "Hospital Address": data.get('Hospital Address')
-                }
-                
-                if not formatted_data["Name of the Patient"] or len(formatted_data["Name of the Patient"].split()) < 2:
-                    alt_match = re.search(r'Patient\s*Name\s*:\s*([^\n]+?)\n([^\n]+?)(?=\nAge\s*:|$)', text, re.DOTALL)
-                    if alt_match:
-                        name = ' '.join([alt_match.group(1).strip(), alt_match.group(2).strip()])
-                        name = re.sub(r'\s*Age\s*:.*$', '', name)
-                        formatted_data["Name of the Patient"] = name.strip()
-                    else:
-                        alt_match = re.search(r'Patient\s*Name\s*:\s*([^\n]+?)(?=\s*Age\s*:|$)', text, re.DOTALL)
-                        if alt_match:
-                            name = alt_match.group(1).strip()
-                            name = re.sub(r'\s*Age\s*:.*$', '', name)
-                            formatted_data["Name of the Patient"] = name.strip()
-                
-                return formatted_data
-            else:
-                return None
-                
+            address_lines = []
+            start_y = None
+            end_y = None
+            stop_processing = False
+
+            # Find "To,"
+            for w in words:
+                if w[4].strip() == 'To,':  # w[4] is the text in PyMuPDF
+                    start_y = w[3]  # w[3] is bottom coordinate
+                    break
+            if start_y is None:
+                return "null"
+
+            # Find end marker (Subject or other indicators)
+            for w in words:
+                if w[4].strip().startswith('Subject') and w[3] > start_y:
+                    end_y = w[1]  # w[1] is top coordinate
+                    break
+            if end_y is None:
+                end_y = start_y + 150
+
+            lines = {}
+            for w in words:
+                # Stop processing if we hit certain markers
+                if 'Inlias' in w[4] or ('ID' in w[4] and ':' in w[4]):
+                    stop_processing = True
+                    continue
+                    
+                if stop_processing:
+                    continue
+                    
+                if start_y < w[1] < end_y and w[0] < 250:  # w[0] is x0, w[1] is y0
+                    y = round(w[1], 1)
+                    lines.setdefault(y, []).append(w[4])
+
+            sorted_lines = [lines[y] for y in sorted(lines)]
+            full_lines = [' '.join(line) for line in sorted_lines]
+            
+            # Join and clean the address
+            address = ', '.join(full_lines)
+            
+            # Final cleanup to remove any trailing commas or spaces
+            address = address.rstrip(', ')
+            
+            return address if address else "null"
+            
         except Exception as e:
-            print(f"Error processing PDF: {e}")
+            print(f"Error extracting address layout: {e}", file=sys.stderr)
+            return "null"
+        finally:
+            if 'doc' in locals():
+                doc.close()
+
+    def extract_al_number(self, text):
+        """Extract AL Number from the line containing 'AL No :'"""
+        try:
+            match = re.search(r'AL\s*No\s*:\s*([^\s]+)', text)
+            return match.group(1) if match else None
+        except Exception as e:
+            print(f"Error extracting AL Number: {e}", file=sys.stderr)
             return None
 
+    def extract_patient_name(self, text):
+        """Extract patient name after 'Subject :- Denial of Pre-Auth for'"""
+        try:
+            match = re.search(r'Subject\s*:-\s*Denial\s*of\s*Pre-Auth\s*for\s*([^\n]+)', text)
+            return match.group(1).strip() if match else None
+        except Exception as e:
+            print(f"Error extracting patient name: {e}", file=sys.stderr)
+            return None
+
+    def extract_table_values(self, text):
+        """Extract values from the table (Member ID and Policy Number)"""
+        try:
+            # Find the table section
+            table_section = re.search(r'Member ID\s*\|.*?Policy Number\s*\|.*?\n(.*?)\n', text, re.DOTALL)
+            if not table_section:
+                return None, None
+            
+            # Extract all values from the table row
+            values = re.findall(r'\|\s*([^\|]+)\s*\|', table_section.group(0))
+            if len(values) >= 4:
+                member_id = values[0].strip()
+                policy_number = values[3].strip()
+                return member_id, policy_number
+            return None, None
+        except Exception as e:
+            print(f"Error extracting table values: {e}", file=sys.stderr)
+            return None, None
+
+    def process_denial_letter(self, pdf_path):
+        """Process the denial letter PDF and extract all required fields"""
+        text = self.extract_text_from_pdf(pdf_path)
+        if not text.strip():
+            return None
+
+        # Extract all fields
+        hospital_address = self.extract_address_layout(pdf_path)
+        al_number = self.extract_al_number(text)
+        patient_name = self.extract_patient_name(text)
+        member_id, policy_number = self.extract_table_values(text)
+
+        return {
+            "AL Number": al_number,
+            "UHID Number": member_id,
+            "Name of the Patient": patient_name,
+            "Policy Number": policy_number,
+            "Hospital Address": hospital_address,
+            "Reason": None  # To be implemented later
+        }
+
 def main():
-    if len(sys.argv) == 2:
-        pdf_path = sys.argv[1]
-    else:
-        pdf_path = "pdf1.pdf"
-        print(f"No command line argument provided, using default: {pdf_path}")
-    
-    extractor = DataExtractor()
-    result = extractor.process_pdf(pdf_path)
-    
+    if len(sys.argv) != 2:
+        print("Usage: python denial_extractor.py <path_to_pdf>", file=sys.stderr)
+        sys.exit(1)
+
+    extractor = DenialLetterExtractor()
+    result = extractor.process_denial_letter(sys.argv[1])
+
     if result:
         print(json.dumps(result, indent=4, ensure_ascii=False))
     else:
-        print("Failed to extract data from PDF")
+        print("Failed to extract data from denial letter", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
     main()
