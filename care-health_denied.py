@@ -2,7 +2,7 @@ import re
 import json
 import sys
 from pathlib import Path
-import fitz  # PyMuPDF
+import fitz  
 from PIL import Image
 import io
 import pytesseract
@@ -143,7 +143,6 @@ class DenialLetterExtractor:
         
     def extract_reason(self, text):
         try:
-            # Find the section between the two markers
             reason_match = re.search(
                 r'conditions of the policy stated below:(.*?)Your request for a cashless facility',
                 text,
@@ -154,11 +153,7 @@ class DenialLetterExtractor:
                 return None
             
             reason_text = reason_match.group(1).strip()
-        
-            # Clean up the text - remove extra whitespace and newlines
             reason_text = ' '.join(reason_text.split())
-        
-            # Remove any leading/trailing punctuation
             reason_text = reason_text.strip('.,;:- ')
         
             return reason_text if reason_text else None
@@ -176,7 +171,6 @@ class DenialLetterExtractor:
             )
             if match:
                 name = match.group(1).strip()
-                # Clean up the name by removing any extra whitespace or line breaks
                 name = ' '.join(name.split())
                 return name
             return None
@@ -207,13 +201,11 @@ class DenialLetterExtractor:
             date_line_index = -1
             subject_line_index = -1
         
-            # Find the line that starts with "DATE:"
             for i, line in enumerate(lines):
                 if line.strip().upper().startswith('DATE:'):
                     date_line_index = i
                     break
-                
-            # Find the line that starts with "Subject:"
+    
             for i, line in enumerate(lines):
                 if i > date_line_index and date_line_index != -1 and line.strip().startswith('Subject:'):
                     subject_line_index = i
@@ -224,12 +216,10 @@ class DenialLetterExtractor:
                 for line in lines[date_line_index+1:subject_line_index]:
                     stripped_line = line.strip()
                     if stripped_line:
-                        # Remove any empty lines or lines that are just whitespace
                         address_lines.append(stripped_line)
             
-            # Join the lines with newlines and clean up any extra spaces
                 address = '\n'.join(address_lines)
-                address = re.sub(r'\n+', ',', address)  # Remove consecutive newlines
+                address = re.sub(r'\n+', ',', address)  
                 return address.strip()
             return None
         except Exception as e:
@@ -241,11 +231,9 @@ class DenialLetterExtractor:
         if not text.strip():
             return None
 
-        # Get the first line to determine the type of document
         first_line = text.split('\n')[0].strip()
 
         if first_line.lower().startswith("denial letter"):
-            # Process as Denial Letter
             hospital_address = self.extract_address_layout(pdf_path)
             al_number = self.extract_al_number(text)
             patient_name = self.extract_patient_name(text)
@@ -262,7 +250,6 @@ class DenialLetterExtractor:
                 "Reason": reason
             }
         elif "NON - REGISTRATION OF CLAIM" in first_line:
-            # Process as Non-Registration of Claim
             patient_name = self.extract_non_registration_patient_name(text)
             reason = self.extract_non_registration_reason(text)
             hospital_address = self.extract_non_registration_address(text)
