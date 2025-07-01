@@ -155,10 +155,10 @@ class DenialLetterExtractor:
             
             reason_text = reason_match.group(1).strip()
         
-        # Clean up the text - remove extra whitespace and newlines
+            # Clean up the text - remove extra whitespace and newlines
             reason_text = ' '.join(reason_text.split())
         
-        # Remove any leading/trailing punctuation
+            # Remove any leading/trailing punctuation
             reason_text = reason_text.strip('.,;:- ')
         
             return reason_text if reason_text else None
@@ -167,25 +167,102 @@ class DenialLetterExtractor:
             print(f"Error extracting reason: {e}", file=sys.stderr)
             return None
 
+    def extract_non_registration_patient_name(self, text):
+        try:
+            match = re.search(
+                r'We have received the documents \(AL No :-.*?\) In the name of (.*?) filed by you',
+                text,
+                re.DOTALL
+            )
+            if match:
+                name = match.group(1).strip()
+                # Clean up the name by removing any extra whitespace or line breaks
+                name = ' '.join(name.split())
+                return name
+            return None
+        except Exception as e:
+            print(f"Error extracting non-registration patient name: {e}", file=sys.stderr)
+            return None
+
+    def extract_non_registration_reason(self, text):
+        try:
+            match = re.search(
+                r'Details of the reasons are given below\.(.*?)In case you require any additional assistance',
+                text,
+                re.DOTALL
+            )
+            if match:
+                reason = match.group(1).strip()
+                # Clean up the reason text
+                reason = '\n'.join(line.strip() for line in reason.split('\n') if line.strip())
+                return reason
+            return None
+        except Exception as e:
+            print(f"Error extracting non-registration reason: {e}", file=sys.stderr)
+            return None
+
+    def extract_non_registration_address(self, text):
+        try:
+            lines = text.split('\n')
+            date_line_index = -1
+            subject_line_index = -1
+            
+            for i, line in enumerate(lines):
+                if line.strip().startswith('Date') and date_line_index == -1:
+                    date_line_index = i
+                if line.strip().startswith('Subject') and subject_line_index == -1:
+                    subject_line_index = i
+                    break
+            
+            if date_line_index != -1 and subject_line_index != -1 and date_line_index < subject_line_index:
+                address_lines = []
+                for line in lines[date_line_index+1:subject_line_index]:
+                    stripped_line = line.strip()
+                    if stripped_line:
+                        address_lines.append(stripped_line)
+                return '\n'.join(address_lines)
+            return None
+        except Exception as e:
+            print(f"Error extracting non-registration address: {e}", file=sys.stderr)
+            return None
+
     def process_denial_letter(self, pdf_path):
         text = self.extract_text_from_pdf(pdf_path)
         if not text.strip():
             return None
 
-        hospital_address = self.extract_address_layout(pdf_path)
-        al_number = self.extract_al_number(text)
-        patient_name = self.extract_patient_name(text)
-        member_id, policy_number = self.extract_table_values(text)
-        reason = self.extract_reason(text) 
+        # Get the first line to determine the type of document
+        first_line = text.split('\n')[0].strip()
 
-        return {
-            "AL Number": al_number,
-            "UHID Number": member_id,
-            "Name of the Patient": patient_name,
-            "Policy Number": policy_number,
-            "Hospital Address": hospital_address,
-            "Reason": reason
-        }
+        if first_line.lower().startswith("denial letter"):
+            # Process as Denial Letter
+            hospital_address = self.extract_address_layout(pdf_path)
+            al_number = self.extract_al_number(text)
+            patient_name = self.extract_patient_name(text)
+            member_id, policy_number = self.extract_table_values(text)
+            reason = self.extract_reason(text) 
+
+            return {
+                "AL Number": al_number,
+                "UHID Number": member_id,
+                "Name of the Patient": patient_name,
+                "Policy Number": policy_number,
+                "Hospital Address": hospital_address,
+                "Reason": reason
+            }
+        elif "NON - REGISTRATION OF CLAIM" in first_line:
+            # Process as Non-Registration of Claim
+            patient_name = self.extract_non_registration_patient_name(text)
+            reason = self.extract_non_registration_reason(text)
+            hospital_address = self.extract_non_registration_address(text)
+
+            return {
+                "Name of the Patient": patient_name,
+                "Hospital Address": hospital_address,
+                "Reason": reason
+            }
+        else:
+            return None
 
 def main():
     if len(sys.argv) != 2:
@@ -198,10 +275,8 @@ def main():
     if result:
         print(json.dumps(result, indent=4, ensure_ascii=False))
     else:
-        print("Failed to extract data from denial letter", file=sys.stderr)
+        print("null")
     
-        sys.exit(1)
-
 if __name__ == "__main__":
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
     main()
