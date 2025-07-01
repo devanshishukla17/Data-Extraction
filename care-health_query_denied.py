@@ -1,8 +1,7 @@
 import re
 import json
 import sys
-from pathlib import Path
-import fitz  
+import fitz  # PyMuPDF
 from PIL import Image
 import io
 import pytesseract
@@ -50,7 +49,7 @@ class DenialLetterExtractor:
                     start_y = w[3]  
                     break
             if start_y is None:
-                return "null"
+                return None
 
             for w in words:
                 if w[4].strip().startswith('Subject') and w[3] > start_y:
@@ -77,11 +76,11 @@ class DenialLetterExtractor:
             
             address = ', '.join(full_lines)
             address = address.rstrip(', ')
-            return address if address else "null"
+            return address if address else None
             
         except Exception as e:
             print(f"Error extracting address layout: {e}", file=sys.stderr)
-            return "null"
+            return None
         finally:
             if 'doc' in locals():
                 doc.close()
@@ -148,14 +147,12 @@ class DenialLetterExtractor:
                 text,
                 re.DOTALL | re.IGNORECASE
             )
-        
             if not reason_match:
                 return None
             
             reason_text = reason_match.group(1).strip()
             reason_text = ' '.join(reason_text.split())
             reason_text = reason_text.strip('.,;:- ')
-        
             return reason_text if reason_text else None
         
         except Exception as e:
@@ -187,7 +184,6 @@ class DenialLetterExtractor:
             )
             if match:
                 reason = match.group(1).strip()
-                # Clean up the reason text
                 reason = '\n'.join(line.strip() for line in reason.split('\n') if line.strip())
                 return reason
             return None
@@ -200,30 +196,53 @@ class DenialLetterExtractor:
             lines = text.split('\n')
             date_line_index = -1
             subject_line_index = -1
-        
+            
             for i, line in enumerate(lines):
                 if line.strip().upper().startswith('DATE:'):
                     date_line_index = i
                     break
-    
+                    
             for i, line in enumerate(lines):
                 if i > date_line_index and date_line_index != -1 and line.strip().startswith('Subject:'):
                     subject_line_index = i
                     break
-        
+            
             if date_line_index != -1 and subject_line_index != -1 and date_line_index < subject_line_index:
                 address_lines = []
                 for line in lines[date_line_index+1:subject_line_index]:
                     stripped_line = line.strip()
                     if stripped_line:
                         address_lines.append(stripped_line)
-            
                 address = '\n'.join(address_lines)
-                address = re.sub(r'\n+', ',', address)  
+                address = re.sub(r'\n+', '\n', address)
                 return address.strip()
             return None
         except Exception as e:
             print(f"Error extracting non-registration address: {e}", file=sys.stderr)
+            return None
+
+    def extract_deficiency_patient_name(self, text):
+        try:
+            match = re.search(r'Subject\s*:-\s*Additional information required for Pre-Auth of\s*([^\n]+)', text)
+            return match.group(1).strip() if match else None
+        except Exception as e:
+            print(f"Error extracting deficiency patient name: {e}", file=sys.stderr)
+            return None
+
+    def extract_deficiency_reason(self, text):
+        try:
+            reason_match = re.search(
+                r'NEED\s*(.*?)Kindly send us the required information/documents at the earliest',
+                text,
+                re.DOTALL
+            )
+            if reason_match:
+                reason_text = reason_match.group(1).strip()
+                reason_text = ' '.join(reason_text.split())
+                return reason_text if reason_text else None
+            return None
+        except Exception as e:
+            print(f"Error extracting deficiency reason: {e}", file=sys.stderr)
             return None
 
     def process_denial_letter(self, pdf_path):
@@ -241,7 +260,7 @@ class DenialLetterExtractor:
             reason = self.extract_reason(text) 
 
             return {
-                "Letter Type":"Denied",
+                "Letter Type": "Denied",
                 "AL Number": al_number,
                 "UHID Number": member_id,
                 "Name of the Patient": patient_name,
@@ -255,10 +274,23 @@ class DenialLetterExtractor:
             hospital_address = self.extract_non_registration_address(text)
 
             return {
-                "Letter Type":"Denied",
+                "Letter Type": "Denied",
                 "Name of the Patient": patient_name,
                 "Hospital Address": hospital_address,
-                "Reason": reason
+                "Reason": reason,
+            }
+        elif "Deficiency Letter" in first_line:
+            hospital_address = self.extract_address_layout(pdf_path)
+            al_number = self.extract_al_number(text)
+            patient_name = self.extract_deficiency_patient_name(text)
+            reason = self.extract_deficiency_reason(text)
+
+            return {
+                "Letter Type": "Query",
+                "AL Number": al_number,
+                "Hospital Address": hospital_address,
+                "Name of the Patient": patient_name,
+                "Reason": reason,
             }
         else:
             return None
