@@ -206,21 +206,31 @@ class DenialLetterExtractor:
             lines = text.split('\n')
             date_line_index = -1
             subject_line_index = -1
-            
+        
+            # Find the line that starts with "DATE:"
             for i, line in enumerate(lines):
-                if line.strip().startswith('Date') and date_line_index == -1:
+                if line.strip().upper().startswith('DATE:'):
                     date_line_index = i
-                if line.strip().startswith('Subject') and subject_line_index == -1:
+                    break
+                
+            # Find the line that starts with "Subject:"
+            for i, line in enumerate(lines):
+                if i > date_line_index and date_line_index != -1 and line.strip().startswith('Subject:'):
                     subject_line_index = i
                     break
-            
+        
             if date_line_index != -1 and subject_line_index != -1 and date_line_index < subject_line_index:
                 address_lines = []
                 for line in lines[date_line_index+1:subject_line_index]:
                     stripped_line = line.strip()
                     if stripped_line:
+                        # Remove any empty lines or lines that are just whitespace
                         address_lines.append(stripped_line)
-                return '\n'.join(address_lines)
+            
+            # Join the lines with newlines and clean up any extra spaces
+                address = '\n'.join(address_lines)
+                address = re.sub(r'\n+', ',', address)  # Remove consecutive newlines
+                return address.strip()
             return None
         except Exception as e:
             print(f"Error extracting non-registration address: {e}", file=sys.stderr)
@@ -243,6 +253,7 @@ class DenialLetterExtractor:
             reason = self.extract_reason(text) 
 
             return {
+                "Letter Type":"Denied",
                 "AL Number": al_number,
                 "UHID Number": member_id,
                 "Name of the Patient": patient_name,
@@ -257,6 +268,7 @@ class DenialLetterExtractor:
             hospital_address = self.extract_non_registration_address(text)
 
             return {
+                "Letter Type":"Denied",
                 "Name of the Patient": patient_name,
                 "Hospital Address": hospital_address,
                 "Reason": reason
