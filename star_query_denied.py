@@ -35,8 +35,6 @@ def extract_info_from_pdf(pdf_path):
                 first_page = pdf.pages[0]
                 text = first_page.extract_text()
                 lines = [line.strip() for line in text.split('\n') if line.strip()]
-
-                # Determine letter type
                 is_denial = False
                 for line in lines[:10]:
                     if "Unable to Admit Claim" in line:
